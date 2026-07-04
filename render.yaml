@@ -1,0 +1,31 @@
+databases:
+  - name: finfam-db
+    plan: free
+    databaseName: finfam
+    user: finfam
+
+services:
+  - type: web
+    name: finfam-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npx prisma migrate deploy && node src/server.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finfam-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES
+        value: 7d
+      - key: GOOGLE_CLIENT_ID
+        value: sandbox-placeholder.apps.googleusercontent.com
+      - key: FINTOC_SECRET_KEY
+        value: sk_test_placeholder
+      - key: FINTOC_WEBHOOK_SECRET
+        value: whsec_placeholder
+      - key: FRONTEND_URL
+        value: http://localhost:4200
