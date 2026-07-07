@@ -1,5 +1,5 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://REPLACE-WITH-RAILWAY-URL/api',
-  socketUrl: 'https://REPLACE-WITH-RAILWAY-URL'
+  apiUrl: 'https://finfam-backend-nwh2.onrender.com/api',
+  socketUrl: 'https://finfam-backend-nwh2.onrender.com'
 };
