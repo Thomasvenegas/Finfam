@@ -69,9 +69,15 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
         <div *ngIf="!movements.length" class="muted">
           Aún no hay movimientos este mes. Registra un gasto o conecta tu banco.
         </div>
-        <div *ngFor="let m of movements" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)">
-          <span>{{ m.description }} <span class="muted">· {{ m.category }} · {{ m.source }}</span></span>
-          <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'">
+        <div *ngFor="let m of movements" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)">
+          <span style="flex:1;min-width:0">
+            {{ m.description }}
+            <span class="muted">· {{ m.category }} · {{ m.source }}</span>
+          </span>
+          <a *ngIf="mailUrl(m) as url" [href]="url" target="_blank" rel="noopener"
+             class="muted" title="Abrir en Gmail el correo del que salió este movimiento"
+             style="white-space:nowrap">✉ Ver correo</a>
+          <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
             {{ m.type === 'income' ? '+' : '-' }}{{ m.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
           </strong>
         </div>
@@ -103,7 +109,10 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
         <strong [style.color]="p.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
           {{ p.type === 'income' ? '+' : '-' }}{{ p.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
         </strong>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <a *ngIf="mailUrl(p) as url" [href]="url" target="_blank" rel="noopener"
+             class="muted" title="Abrir en Gmail el correo que originó esta propuesta"
+             style="white-space:nowrap;margin-right:4px">✉ Ver correo</a>
           <button (click)="approve(p)" [disabled]="busyId === p.id">
             {{ p.type === 'income' ? 'Sumar' : 'Descontar' }}
           </button>
@@ -255,6 +264,28 @@ export class DashboardComponent implements OnInit, OnDestroy {
     } catch {
       this.ingest = null;
     }
+  }
+
+  /**
+   * Enlace al correo del que salió un movimiento. El identificador guardado
+   * cambia según cómo llegó:
+   *   gmail:<id>  → id de la API de Gmail, que es el mismo del fragmento de URL
+   *   email:<id>  → Message-ID original, que se busca con rfc822msgid
+   * Devuelve null para gastos manuales o de Fintoc, que no vienen de un correo.
+   */
+  mailUrl(m: any): string | null {
+    const ext: string | undefined = m?.externalId;
+    if (!ext) return null;
+
+    // Sin la cuenta conectada se cae a /u/0, que es la sesión de Google por
+    // defecto del navegador y puede no ser la misma del banco.
+    const base = this.gmail?.email
+      ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(this.gmail.email)}`
+      : 'https://mail.google.com/mail/u/0/';
+
+    if (ext.startsWith('gmail:')) return `${base}#all/${ext.slice(6)}`;
+    if (ext.startsWith('email:')) return `${base}#search/rfc822msgid:${encodeURIComponent(ext.slice(6))}`;
+    return null;
   }
 
   /** Movimientos detectados en correos que esperan tu confirmación. */

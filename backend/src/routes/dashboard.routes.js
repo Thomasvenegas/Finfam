@@ -60,6 +60,7 @@ router.get('/summary', async (req, res, next) => {
         amount: Number(e.amount),
         category: e.category,
         source: e.source,
+        externalId: e.externalId, // permite abrir el correo de origen
         date: e.date
       })),
       ...incomes
@@ -70,7 +71,8 @@ router.get('/summary', async (req, res, next) => {
           description: i.label,
           amount: Number(i.amount),
           category: 'ingreso',
-          source: i.externalId?.startsWith('email:') ? 'email' : 'manual',
+          source: i.externalId ? 'email' : 'manual',
+          externalId: i.externalId, // permite abrir el correo de origen
           date: i.date
         }))
     ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
