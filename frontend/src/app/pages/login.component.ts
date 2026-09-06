@@ -2,6 +2,7 @@ import { Component, AfterViewInit, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../core/auth.service';
+import { environment } from '../../environments/environment';
 
 declare const google: any;
 
@@ -50,7 +51,7 @@ export class LoginComponent implements AfterViewInit {
   error = ''; busy = false;
 
   // Reemplaza con tu Client ID de Google Cloud Console
-  readonly GOOGLE_CLIENT_ID = 'TU_CLIENT_ID.apps.googleusercontent.com';
+  readonly GOOGLE_CLIENT_ID = environment.googleClientId;
 
   constructor(private auth: AuthService, private zone: NgZone) {}
 
