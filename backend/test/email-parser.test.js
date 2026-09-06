@@ -223,3 +223,60 @@ test('monto al final de la frase no arrastra el punto', () => {
   });
   assert.equal(r.amount, 12500);
 });
+
+// --- Publicidad del banco: el falso positivo más caro ---
+
+test('descarta promoción con descuento aunque hable de compras', () => {
+  assert.equal(parseBankEmail({
+    from: 'comunicaciones@bancochile.cl',
+    subject: '¡Aprovecha 20% de descuento!',
+    text: 'Aprovecha un descuento de $10.000 en tu próxima compra pagando con tu Tarjeta de Crédito.'
+  }), null);
+});
+
+test('descarta oferta de cupo preaprobado', () => {
+  assert.equal(parseBankEmail({
+    from: 'ofertas@santander.cl',
+    subject: 'Tu cupo preaprobado te espera',
+    text: 'Tienes un cupo preaprobado de $2.000.000 para tus compras. Solicítalo hoy.'
+  }), null);
+});
+
+test('descarta campaña de Cyber con cuotas sin interés', () => {
+  assert.equal(parseBankEmail({
+    from: 'marketing@bci.cl',
+    subject: 'Cyber Monday en tus comercios favoritos',
+    text: 'Compra en cuotas sin interés y obtén descuentos de hasta $50.000.'
+  }), null);
+});
+
+test('descarta invitación a acumular puntos', () => {
+  assert.equal(parseBankEmail({
+    from: 'beneficios@falabella.com',
+    subject: 'Canjea tus puntos',
+    text: 'Participa y canjea tus puntos por una compra de hasta $30.000. Bases legales en el sitio.'
+  }), null);
+});
+
+test('una compra real sobrevive aunque mencione beneficios', () => {
+  // El caso difícil: el aviso trae lenguaje de campaña pero es un cargo real.
+  const r = parseBankEmail({
+    from: 'enviodigital@bancochile.cl',
+    subject: 'Compra con Tarjeta de Crédito',
+    text: 'Se realizó una compra por $12.000 en LIDER con tu tarjeta terminada en 1234. '
+        + 'Acumula puntos con cada compra.'
+  });
+  assert.equal(r.type, 'expense');
+  assert.equal(r.amount, 12000);
+});
+
+test('un abono real sobrevive aunque el pie traiga publicidad', () => {
+  const r = parseBankEmail({
+    from: 'no-responder@bancoestado.cl',
+    subject: 'Transferencia recibida',
+    text: 'Has recibido una transferencia por $80.000 de MARIA SOTO. '
+        + 'Conoce más beneficios en nuestra app.'
+  });
+  assert.equal(r.type, 'income');
+  assert.equal(r.amount, 80000);
+});

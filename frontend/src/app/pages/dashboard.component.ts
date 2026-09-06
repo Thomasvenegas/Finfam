@@ -80,6 +80,9 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
           <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
             {{ m.type === 'income' ? '+' : '-' }}{{ m.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
           </strong>
+          <button *ngIf="m.type === 'expense'" class="ghost" (click)="removeExpense(m)"
+                  [disabled]="busyId === m.id" title="Quitar este gasto y devolver el monto al saldo"
+                  style="padding:2px 8px;line-height:1.4">✕</button>
         </div>
         <button class="ghost" style="margin-top:14px" (click)="connectBank()">
           Conectar Banco de Chile (y otros)
@@ -263,6 +266,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
       );
     } catch {
       this.ingest = null;
+    }
+  }
+
+  /** Quita un gasto mal registrado y devuelve el monto al saldo. */
+  async removeExpense(m: any) {
+    this.busyId = m.id;
+    try {
+      await firstValueFrom(this.http.delete(`${API}/expenses/${m.id}`));
+      await this.load();
+    } finally {
+      this.busyId = null;
     }
   }
 

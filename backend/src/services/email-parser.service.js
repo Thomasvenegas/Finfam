@@ -21,6 +21,16 @@ const INFLOW = /(abono|abonamos|dep[oó]sito|depositamos|transferencia recibida|
 // sustantivo al lado (compra/transacción/operación) en vez de la palabra sola.
 const VETO = /(rechazad|fallid|no autorizad|revers[ao]|anulaci[oó]n|anulad|estado de cuenta|resumen mensual|(?:compra|transacci[oó]n|operaci[oó]n)\s+cancelad)/i;
 
+// Publicidad del banco. Son el falso positivo más caro: hablan de "compras" y
+// traen montos ("20% dcto", "hasta $50.000"), así que sin filtrarlas terminan
+// descontando plata que nunca se gastó.
+const PROMO = /(descuento|dcto\b|% ?off|promoci[oó]n|promo\b|oferta|aprovecha|benefici(?:o|os)\b|canjea|acumula|sorteo|concurso|participa|te invitamos|inscr[ií]bete|suscr[ií]bete|preaprobad|pre-?aprobad|aumenta tu cupo|black friday|cyber ?(?:day|monday|week)|hasta agotar stock|bases legales|v[aá]lid[ao] hasta|conoce m[aá]s|desc[uú]bre|imperdible|sin costo|cuotas sin inter[eé]s|\bclic aqu[ií]\b)/i;
+
+// Señales de que el correo describe una transacción concreta y no una campaña.
+// Si aparecen, mandan por sobre PROMO: un aviso de compra real puede mencionar
+// los puntos acumulados o un beneficio sin dejar de ser un cargo.
+const TRANSACTION = /(terminada? en|final(?:izada?)? en|\*{2,}\s*\d{3,4}|c[oó]digo de autorizaci[oó]n|n[uú]mero de (?:operaci[oó]n|transacci[oó]n)|comercio\s*:|fecha y hora|saldo disponible|se (?:ha\s+)?(?:realizad?[oa]|efectuad?[oa]|realiz[oó]|efectu[oó])|cargo en tu (?:cuenta|tarjeta)|has (?:recibido|realizado))/i;
+
 /**
  * Dominios que se vigilan por defecto al conectar Gmail. Sirven para acotar la
  * búsqueda: así solo se descargan correos de bancos y no el resto de la bandeja.
@@ -163,6 +173,10 @@ export function parseBankEmail({ from = '', subject = '', text = '', receivedAt 
 
   // Cargos que no llegaron a ocurrir: no mueven plata en ninguna dirección.
   if (VETO.test(body)) return null;
+
+  // Publicidad: se descarta salvo que el correo traiga además una marca clara
+  // de transacción (nº de tarjeta, código de autorización, saldo, etc.).
+  if (PROMO.test(body) && !TRANSACTION.test(body)) return null;
 
   const outAt = body.search(OUTFLOW);
   const inAt = body.search(INFLOW);
