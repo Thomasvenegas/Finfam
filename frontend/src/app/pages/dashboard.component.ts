@@ -78,6 +78,36 @@ declare const Fintoc: any;
       </div>
     </div>
 
+    <!-- Bandeja de confirmación: nada toca el saldo sin tu visto bueno -->
+    <div class="card" style="margin-top:16px" *ngIf="pending.length">
+      <h3>Por confirmar ({{ pending.length }})</h3>
+      <p class="muted" style="margin-top:0">
+        Detectamos esto en los correos de tu banco. No afecta tu saldo hasta que lo apruebes.
+      </p>
+
+      <div *ngFor="let p of pending"
+           style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <strong>{{ p.description }}</strong>
+          <div class="muted" style="font-size:13px">
+            {{ p.type === 'income' ? 'Ingreso' : 'Gasto' }}
+            · {{ p.category }}
+            <span *ngIf="p.bank">· {{ p.bank }}</span>
+            · {{ p.date | date:'shortDate' }}
+          </div>
+        </div>
+        <strong [style.color]="p.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
+          {{ p.type === 'income' ? '+' : '-' }}{{ p.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
+        </strong>
+        <div style="display:flex;gap:6px">
+          <button (click)="approve(p)" [disabled]="busyId === p.id">
+            {{ p.type === 'income' ? 'Sumar' : 'Descontar' }}
+          </button>
+          <button class="ghost" (click)="reject(p)" [disabled]="busyId === p.id">Descartar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Movimientos automáticos desde el correo del banco -->
     <div class="card" style="margin-top:16px">
       <h3>Conectar tu correo del banco</h3>
@@ -93,9 +123,9 @@ declare const Fintoc: any;
         <ng-container *ngIf="!gmail?.connected">
           <button style="margin-top:8px" (click)="connectGmail()">Conectar Gmail</button>
           <p class="muted">
-            Solo se leen los correos de tu banco que estén en la bandeja de entrada:
-            la búsqueda filtra por remitente y omite archivados, spam y papelera.
-            Nunca se descarga el resto de tu correo.
+            Solo se leen los correos de tu banco que lleguen a la bandeja de entrada
+            <strong>a partir de ahora</strong>: no se importa tu historial. Cada
+            movimiento detectado te lo mostramos para que decidas si entra o no.
           </p>
         </ng-container>
 
@@ -148,6 +178,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   gmail: any = null;
   gmailMsg = '';
   syncing = false;
+  pending: any[] = [];
+  busyId: string | null = null;
 
   /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
   get movements(): any[] {
@@ -158,6 +190,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   categories = ['supermercado', 'comida', 'transporte', 'salud', 'cuentas', 'ocio', 'otros'];
   private sub?: Subscription;
   private incomeSub?: Subscription;
+  private pendingSub?: Subscription;
 
   lineData: ChartConfiguration<'line'>['data'] = { labels: [], datasets: [] };
   lineOpts: ChartConfiguration<'line'>['options'] = {
@@ -172,14 +205,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.load();
     this.loadIngestAddress();
     this.loadGmailStatus();
+    this.loadPending();
     this.readGmailReturn();
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
     this.sub = this.socket.expenseCreated$.subscribe(() => this.load());
     // Un abono avisado por correo también mueve el saldo: refrescar igual.
     this.incomeSub = this.socket.incomeCreated$.subscribe(() => this.load());
+    // Un correo recién detectado aparece en la bandeja sin recargar la página
+    this.pendingSub = this.socket.pendingCreated$.subscribe(() => this.loadPending());
   }
-  ngOnDestroy() { this.sub?.unsubscribe(); this.incomeSub?.unsubscribe(); }
+  ngOnDestroy() {
+    this.sub?.unsubscribe();
+    this.incomeSub?.unsubscribe();
+    this.pendingSub?.unsubscribe();
+  }
 
   async load() {
     this.s = await firstValueFrom(this.http.get<any>(`${API}/dashboard/summary`));
@@ -211,6 +251,36 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Movimientos detectados en correos que esperan tu confirmación. */
+  async loadPending() {
+    try {
+      this.pending = await firstValueFrom(this.http.get<any[]>(`${API}/pending`));
+    } catch {
+      this.pending = [];
+    }
+  }
+
+  async approve(p: any) {
+    this.busyId = p.id;
+    try {
+      await firstValueFrom(this.http.post(`${API}/pending/${p.id}/approve`, {}));
+      await this.loadPending();
+      await this.load();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
+  async reject(p: any) {
+    this.busyId = p.id;
+    try {
+      await firstValueFrom(this.http.post(`${API}/pending/${p.id}/reject`, {}));
+      await this.loadPending();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
   /** Estado de la conexión con Gmail. */
   async loadGmailStatus() {
     try {
@@ -225,7 +295,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const estado = new URLSearchParams(location.search).get('gmail');
     if (!estado) return;
     this.gmailMsg = estado === 'ok'
-      ? 'Gmail conectado. Revisando tus correos del último mes…'
+      ? 'Gmail conectado. Desde ahora avisaremos de cada movimiento que llegue.'
       : 'No se pudo conectar Gmail. Inténtalo de nuevo.';
     history.replaceState({}, '', location.pathname);
     if (estado === 'ok') this.syncGmail();
@@ -240,8 +310,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.syncing = true;
     try {
       const r = await firstValueFrom(this.http.post<any>(`${API}/gmail/sync`, {}));
-      this.gmailMsg = `Revisados ${r.revisados} correos, ${r.creados} movimientos nuevos.`;
-      await this.load();
+      this.gmailMsg = r.propuestos
+        ? `Revisados ${r.revisados} correos: ${r.propuestos} por confirmar más abajo.`
+        : `Revisados ${r.revisados} correos, nada nuevo.`;
+      await this.loadPending();
       await this.loadGmailStatus();
     } catch (e: any) {
       this.gmailMsg = e?.error?.error || 'No se pudo revisar el correo.';
@@ -255,6 +327,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     await firstValueFrom(this.http.delete(`${API}/gmail/disconnect`));
     this.gmailMsg = 'Gmail desconectado.';
     this.loadGmailStatus();
+    this.loadPending();
   }
 
   async copyIngest() {

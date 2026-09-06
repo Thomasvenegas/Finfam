@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { encrypt, decrypt } from '../lib/crypto.js';
-import { recordEmailMovement } from '../services/movement.service.js';
+import { queueEmailMovement } from '../services/movement.service.js';
 import { DEFAULT_BANK_SENDERS } from '../services/email-parser.service.js';
 import {
   getAuthUrl, exchangeCode, fetchBankEmails, isGmailConfigured
@@ -57,9 +57,17 @@ router.get('/callback', async (req, res) => {
         userId,
         email,
         refreshToken: encrypt(refreshToken),
-        watchedSenders: DEFAULT_BANK_SENDERS
+        watchedSenders: DEFAULT_BANK_SENDERS,
+        // Solo interesan los correos que lleguen de aquí en adelante:
+        // no se importa el historial previo de la casilla.
+        syncFrom: new Date()
       },
-      update: { email, refreshToken: encrypt(refreshToken), createdAt: new Date() }
+      update: {
+        email,
+        refreshToken: encrypt(refreshToken),
+        createdAt: new Date(),
+        syncFrom: new Date()
+      }
     });
 
     res.redirect(`${front}/dashboard?gmail=ok`);
@@ -73,22 +81,21 @@ router.get('/callback', async (req, res) => {
 async function syncUser(link) {
   const mails = await fetchBankEmails(decrypt(link.refreshToken), {
     senders: link.watchedSenders,
-    // Tras la primera vez basta mirar los últimos días; la deduplicación
-    // por id de mensaje evita repetir lo ya registrado.
-    days: link.lastSyncAt ? 3 : 30
+    // Solo lo llegado después de conectar la cuenta.
+    since: link.syncFrom || link.createdAt
   });
 
   let created = 0;
   for (const mail of mails) {
-    const result = await recordEmailMovement(link.userId, mail, `gmail:${mail.id}`);
-    if (result.created) created++;
+    const result = await queueEmailMovement(link.userId, mail, `gmail:${mail.id}`);
+    if (result.queued) created++;
   }
 
   await prisma.gmailLink.update({
     where: { id: link.id },
     data: { lastSyncAt: new Date() }
   });
-  return { revisados: mails.length, creados: created };
+  return { revisados: mails.length, propuestos: created };
 }
 
 router.post('/sync', requireAuth, async (req, res, next) => {

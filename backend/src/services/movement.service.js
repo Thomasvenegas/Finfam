@@ -1,57 +1,103 @@
 import { prisma } from '../lib/prisma.js';
-import { emitExpenseCreated, emitIncomeCreated } from '../server.js';
+import { emitExpenseCreated, emitIncomeCreated, emitPendingCreated } from '../server.js';
 import { categorize } from './fintoc.service.js';
 import { parseBankEmail } from './email-parser.service.js';
 
 /**
- * Convierte un correo bancario en un movimiento del usuario.
+ * Los correos bancarios no tocan el saldo por sí solos: se dejan en una
+ * bandeja de pendientes y el usuario decide si entran o no. Así un cobro que
+ * no reconoce, un traspaso entre cuentas propias o un correo mal interpretado
+ * no distorsionan el mes.
  *
- * Lo usan las dos vías de ingesta (el webhook de reenvío y la lectura directa
- * de Gmail), así que la clasificación y la deduplicación viven en un solo lugar.
- *
- * @param {string} userId
- * @param {{from:string, subject:string, text:string, receivedAt?:string}} mail
- * @param {string} [externalId] id estable del correo, para no duplicar
- * @returns {Promise<{created:'expense'|'income'|null, reason?:string, amount?:number}>}
+ * Lo usan las dos vías de ingesta (lectura de Gmail y webhook de reenvío).
  */
-export async function recordEmailMovement(userId, mail, externalId) {
+
+/**
+ * Deja un movimiento propuesto a partir de un correo.
+ * @returns {Promise<{queued:boolean, reason?:string, type?:string, amount?:number}>}
+ */
+export async function queueEmailMovement(userId, mail, externalId) {
   const parsed = parseBankEmail(mail);
-  if (!parsed) return { created: null, reason: 'no mueve dinero' };
+  if (!parsed) return { queued: false, reason: 'no mueve dinero' };
 
-  if (parsed.type === 'income') {
-    if (externalId) {
-      const dup = await prisma.income.findUnique({ where: { externalId } });
-      if (dup) return { created: null, reason: 'duplicado' };
-    }
-    const income = await prisma.income.create({
-      data: {
-        userId,
-        label: parsed.merchant,
-        amount: parsed.amount,
-        recurring: false, // ingreso puntual del mes, no un sueldo fijo
-        externalId,
-        date: parsed.date
-      }
-    });
-    emitIncomeCreated(userId, income);
-    return { created: 'income', amount: parsed.amount, bank: parsed.bank };
-  }
-
+  // Si ya se propuso (aunque el usuario lo haya rechazado) no se insiste.
   if (externalId) {
-    const dup = await prisma.expense.findUnique({ where: { externalId } });
-    if (dup) return { created: null, reason: 'duplicado' };
+    const visto = await prisma.pendingMovement.findUnique({ where: { externalId } });
+    if (visto) return { queued: false, reason: 'ya revisado' };
   }
-  const expense = await prisma.expense.create({
+
+  const pending = await prisma.pendingMovement.create({
     data: {
       userId,
+      externalId,
+      type: parsed.type,
       description: parsed.merchant,
       amount: parsed.amount,
-      category: categorize(parsed.merchant),
-      source: 'email',
-      externalId,
+      category: parsed.type === 'income' ? 'ingreso' : categorize(parsed.merchant),
+      bank: parsed.bank,
       date: parsed.date
     }
   });
+
+  emitPendingCreated(userId, pending);
+  return { queued: true, type: parsed.type, amount: parsed.amount };
+}
+
+/**
+ * Confirma un pendiente: recién ahí se crea el gasto o el ingreso y se mueve
+ * el saldo. `overrides` permite corregir categoría o monto antes de aceptar.
+ */
+export async function approvePending(userId, pendingId, overrides = {}) {
+  const pending = await prisma.pendingMovement.findFirst({
+    where: { id: pendingId, userId, status: 'pending' }
+  });
+  if (!pending) return null;
+
+  const amount = overrides.amount ?? Number(pending.amount);
+  const description = overrides.description ?? pending.description;
+  const category = overrides.category ?? pending.category;
+
+  if (pending.type === 'income') {
+    const income = await prisma.income.create({
+      data: {
+        userId,
+        label: description,
+        amount,
+        recurring: false, // ingreso puntual del mes, no un sueldo fijo
+        externalId: pending.externalId,
+        date: pending.date
+      }
+    });
+    await prisma.pendingMovement.update({
+      where: { id: pending.id }, data: { status: 'approved' }
+    });
+    emitIncomeCreated(userId, income);
+    return { type: 'income', movement: income };
+  }
+
+  const expense = await prisma.expense.create({
+    data: {
+      userId,
+      description,
+      amount,
+      category,
+      source: 'email',
+      externalId: pending.externalId,
+      date: pending.date
+    }
+  });
+  await prisma.pendingMovement.update({
+    where: { id: pending.id }, data: { status: 'approved' }
+  });
   emitExpenseCreated(userId, expense);
-  return { created: 'expense', amount: parsed.amount, bank: parsed.bank };
+  return { type: 'expense', movement: expense };
+}
+
+/** Descarta un pendiente. Queda marcado para no volver a proponerlo. */
+export async function rejectPending(userId, pendingId) {
+  const { count } = await prisma.pendingMovement.updateMany({
+    where: { id: pendingId, userId, status: 'pending' },
+    data: { status: 'rejected' }
+  });
+  return count > 0;
 }

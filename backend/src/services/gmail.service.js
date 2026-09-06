@@ -89,11 +89,18 @@ async function gmailFetch(path, accessToken) {
  * suele clasificar los avisos de los bancos como "Actualizaciones", así que
  * filtrar por esa pestaña haría perder gastos en silencio.
  */
-export function buildQuery(senders = DEFAULT_BANK_SENDERS, days = 7) {
+export function buildQuery(senders = DEFAULT_BANK_SENDERS, since) {
   const list = (senders?.length ? senders : DEFAULT_BANK_SENDERS)
     .map(s => `from:${s}`)
     .join(' OR ');
-  return `in:inbox (${list}) newer_than:${days}d`;
+
+  // Gmail acepta epoch en segundos, así el corte es exacto y no por día.
+  const desde = since ? new Date(since) : null;
+  const corte = desde && !Number.isNaN(desde.getTime())
+    ? ` after:${Math.floor(desde.getTime() / 1000)}`
+    : '';
+
+  return `in:inbox (${list})${corte}`;
 }
 
 /** Decodifica el cuerpo del mensaje, prefiriendo texto plano sobre HTML. */
@@ -128,12 +135,13 @@ export function extractHeaders(payload) {
 }
 
 /**
- * Devuelve los correos bancarios recientes, ya normalizados para el parser.
+ * Devuelve los correos bancarios llegados después de `since`, ya normalizados
+ * para el parser.
  * @returns {Promise<Array<{id:string, from:string, subject:string, text:string, receivedAt:string}>>}
  */
-export async function fetchBankEmails(refreshToken, { senders, days = 7, max = 25 } = {}) {
+export async function fetchBankEmails(refreshToken, { senders, since, max = 25 } = {}) {
   const accessToken = await accessTokenFrom(refreshToken);
-  const query = encodeURIComponent(buildQuery(senders, days));
+  const query = encodeURIComponent(buildQuery(senders, since));
 
   const list = await gmailFetch(`/messages?q=${query}&maxResults=${max}`, accessToken);
   const ids = (list.messages || []).map(m => m.id);

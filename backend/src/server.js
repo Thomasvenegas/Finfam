@@ -12,6 +12,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import cardRoutes from './routes/cards.routes.js';
 import bankRoutes from './routes/bank.routes.js';
 import gmailRoutes from './routes/gmail.routes.js';
+import pendingRoutes from './routes/pending.routes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -43,6 +44,11 @@ export function emitIncomeCreated(userId, income) {
   io.to(`user:${userId}`).emit('income:created', income);
 }
 
+/** Un movimiento detectado en un correo que espera confirmación del usuario. */
+export function emitPendingCreated(userId, pending) {
+  io.to(`user:${userId}`).emit('pending:created', pending);
+}
+
 app.use(cors({ origin: process.env.FRONTEND_URL }));
 // El webhook de Fintoc necesita el body crudo para verificar la firma
 app.use('/api/bank/webhook', express.raw({ type: 'application/json' }));
@@ -55,6 +61,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/cards', cardRoutes);
 app.use('/api/bank', bankRoutes);
 app.use('/api/gmail', gmailRoutes);
+app.use('/api/pending', pendingRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

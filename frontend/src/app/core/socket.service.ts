@@ -10,6 +10,7 @@ export class SocketService {
   private socket?: Socket;
   expenseCreated$ = new Subject<any>();
   incomeCreated$ = new Subject<any>();
+  pendingCreated$ = new Subject<any>();
 
   connect() {
     if (this.socket?.connected) return;
@@ -18,6 +19,7 @@ export class SocketService {
     });
     this.socket.on('expense:created', e => this.expenseCreated$.next(e));
     this.socket.on('income:created', i => this.incomeCreated$.next(i));
+    this.socket.on('pending:created', p => this.pendingCreated$.next(p));
   }
 
   disconnect() { this.socket?.disconnect(); }

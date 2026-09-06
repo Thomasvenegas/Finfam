@@ -61,21 +61,31 @@ test('lee las cabeceras sin importar mayúsculas', () => {
 });
 
 test('la consulta filtra por remitente: no baja correo ajeno al banco', () => {
-  const q = buildQuery(['bancochile.cl', 'santander.cl'], 7);
-  assert.equal(q, 'in:inbox (from:bancochile.cl OR from:santander.cl) newer_than:7d');
+  const q = buildQuery(['bancochile.cl', 'santander.cl']);
+  assert.equal(q, 'in:inbox (from:bancochile.cl OR from:santander.cl)');
 });
 
 test('solo mira la bandeja de entrada: nada de archivados, spam ni papelera', () => {
-  const q = buildQuery(['bancochile.cl'], 7);
-  assert.match(q, /^in:inbox /);
+  assert.match(buildQuery(['bancochile.cl']), /^in:inbox /);
 });
 
 test('no se limita a la pestaña Principal, donde el banco rara vez cae', () => {
   // category:primary dejaría fuera los avisos que Gmail manda a "Actualizaciones".
-  assert.doesNotMatch(buildQuery(['bancochile.cl'], 7), /category:/);
+  assert.doesNotMatch(buildQuery(['bancochile.cl']), /category:/);
+});
+
+test('solo pide correos posteriores a la conexión, no el historial', () => {
+  const since = new Date('2026-09-06T00:00:00.000Z');
+  const q = buildQuery(['bancochile.cl'], since);
+  assert.match(q, new RegExp(`after:${Math.floor(since.getTime() / 1000)}`));
+});
+
+test('sin marca de inicio no pone corte temporal', () => {
+  assert.doesNotMatch(buildQuery(['bancochile.cl']), /after:/);
+  assert.doesNotMatch(buildQuery(['bancochile.cl'], 'fecha-invalida'), /after:/);
 });
 
 test('sin remitentes propios usa la lista por defecto', () => {
-  assert.match(buildQuery([], 3), /from:bancochile\.cl/);
-  assert.match(buildQuery(undefined, 3), /newer_than:3d/);
+  assert.match(buildQuery([]), /from:bancochile\.cl/);
+  assert.match(buildQuery(undefined), /from:santander\.cl/);
 });

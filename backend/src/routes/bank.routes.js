@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { emitExpenseCreated } from '../server.js';
 import { listAccounts, listMovements, categorize } from '../services/fintoc.service.js';
 import { normalizeInbound } from '../services/email-parser.service.js';
-import { recordEmailMovement } from '../services/movement.service.js';
+import { queueEmailMovement } from '../services/movement.service.js';
 
 const router = Router();
 
@@ -167,7 +167,7 @@ router.post('/email-ingest', async (req, res) => {
     if (!user) return res.json({ ok: true, reason: 'usuario no encontrado' });
 
     const externalId = mail.messageId ? `email:${mail.messageId}` : undefined;
-    const result = await recordEmailMovement(user.id, mail, externalId);
+    const result = await queueEmailMovement(user.id, mail, externalId);
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('email-ingest error', e.message);
