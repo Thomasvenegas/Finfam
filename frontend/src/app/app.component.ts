@@ -11,12 +11,12 @@ import { AuthService } from './core/auth.service';
   imports: [RouterOutlet, RouterLink, CommonModule],
   template: `
     <nav *ngIf="auth.user()" style="background:var(--card);border-bottom:1px solid var(--line)">
-      <div class="container" style="display:flex;align-items:center;gap:20px;padding-top:14px;padding-bottom:14px">
+      <div class="container nav-bar" style="display:flex;align-items:center;gap:20px;padding-top:14px;padding-bottom:14px">
         <strong style="font-family:var(--font-display);color:var(--magenta)">FinFam</strong>
         <a routerLink="/dashboard">Resumen</a>
         <a routerLink="/tarjetas">Tarjetas</a>
         <span style="flex:1"></span>
-        <span class="muted">{{ auth.user()?.name }}</span>
+        <span class="muted nav-user">{{ auth.user()?.name }}</span>
         <button class="ghost" (click)="auth.logout()">Salir</button>
       </div>
     </nav>

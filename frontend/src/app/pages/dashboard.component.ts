@@ -7,12 +7,16 @@ import { BaseChartDirective } from 'ng2-charts';
 import { Chart, ChartConfiguration } from 'chart.js';
 import { API } from '../core/auth.service';
 import { SocketService } from '../core/socket.service';
+import { ThemeService } from '../core/theme.service';
 
 declare const Fintoc: any;
 
-// Chart.js asume fondo claro: sin esto, ejes y leyendas quedan invisibles.
-Chart.defaults.color = '#9d9bd0';
-Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
+// Chart.js asume fondo claro; los ejes se re-tiñen con cada cambio de tema.
+function tintarChartJs() {
+  const css = getComputedStyle(document.documentElement);
+  Chart.defaults.color = css.getPropertyValue('--ink-soft').trim();
+  Chart.defaults.borderColor = css.getPropertyValue('--line').trim();
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -44,18 +48,22 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
       </p>
     </div>
 
-    <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+    <div class="grid grid-2" style="margin-top:16px">
       <div class="card">
         <h3>Gasto acumulado vs ingreso</h3>
-        <canvas baseChart type="line" [data]="lineData" [options]="lineOpts"></canvas>
+        <div class="chart-box">
+          <canvas baseChart type="line" [data]="lineData" [options]="lineOpts"></canvas>
+        </div>
       </div>
       <div class="card">
         <h3>¿En qué se va la plata?</h3>
-        <canvas baseChart type="doughnut" [data]="donutData"></canvas>
+        <div class="chart-box">
+          <canvas baseChart type="doughnut" [data]="donutData" [options]="donutOpts"></canvas>
+        </div>
       </div>
     </div>
 
-    <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+    <div class="grid grid-2" style="margin-top:16px">
       <!-- Alta rápida de gastos -->
       <div class="card">
         <h3>Registrar un gasto</h3>
@@ -133,6 +141,42 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
           Conectar Banco de Chile (y otros)
         </button>
         <p class="muted">Vía Fintoc: tus movimientos llegan solos y el saldo baja al instante.</p>
+      </div>
+    </div>
+
+    <!-- Apariencia: los temas son bloques de variables CSS, así que el cambio
+         es instantáneo y alcanza a toda la app, gráficos incluidos -->
+    <div class="card" style="margin-top:16px">
+      <h3>Apariencia</h3>
+      <p class="muted" style="margin-top:0">
+        Elige cómo se ve FinFam. La preferencia se guarda en este dispositivo.
+      </p>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button *ngFor="let t of tema.temas" class="ghost"
+                (click)="tema.elegirTema(t.id)"
+                [style.borderColor]="tema.temaActual() === t.id ? 'var(--neon)' : ''"
+                [style.borderWidth]="tema.temaActual() === t.id ? '2px' : ''"
+                style="display:flex;align-items:center;gap:8px;padding:8px 12px">
+          <span style="display:flex;border-radius:6px;overflow:hidden;border:1px solid var(--line)">
+            <span *ngFor="let c of t.muestra"
+                  [style.background]="c"
+                  style="width:12px;height:18px;display:block"></span>
+          </span>
+          {{ t.nombre }}
+          <span *ngIf="tema.temaActual() === t.id" style="color:var(--neon)">✓</span>
+        </button>
+      </div>
+
+      <label style="margin-top:16px">Color de los botones</label>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="color" [value]="tema.acento() || tema.color('--neon')"
+               (input)="tema.elegirAcento($any($event.target).value)"
+               style="width:56px;height:38px;padding:2px;cursor:pointer">
+        <button *ngIf="tema.acento()" class="ghost" (click)="tema.elegirAcento(null)">
+          Volver al del tema
+        </button>
+        <span class="muted">Cambia el acento sin cambiar el resto de la paleta.</span>
       </div>
     </div>
 
@@ -404,15 +448,31 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private sub?: Subscription;
   private incomeSub?: Subscription;
   private pendingSub?: Subscription;
+  private temaSub?: Subscription;
 
   lineData: ChartConfiguration<'line'>['data'] = { labels: [], datasets: [] };
   lineOpts: ChartConfiguration<'line'>['options'] = {
+    responsive: true,
+    maintainAspectRatio: false, // el alto lo pone .chart-box
     plugins: { legend: { display: true } },
     scales: { y: { beginAtZero: true } }
   };
+  donutOpts: ChartConfiguration<'doughnut'>['options'] = {
+    responsive: true,
+    maintainAspectRatio: false
+  };
   donutData: ChartConfiguration<'doughnut'>['data'] = { labels: [], datasets: [] };
 
-  constructor(private http: HttpClient, private socket: SocketService) {}
+  constructor(
+    private http: HttpClient,
+    private socket: SocketService,
+    public tema: ThemeService
+  ) {}
+
+  /** Chart.js necesita el color con alfa para el relleno bajo la curva. */
+  private conAlfa(color: string, alfa: number): string {
+    return `color-mix(in srgb, ${color} ${Math.round(alfa * 100)}%, transparent)`;
+  }
 
   ngOnInit() {
     this.load();
@@ -436,11 +496,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
     // Un correo recién detectado aparece en la bandeja sin recargar la página
     this.pendingSub = this.socket.pendingCreated$.subscribe(() => this.loadPending());
+
+    // Los gráficos se pintan con colores calculados en JS, no con CSS: a
+    // diferencia del resto de la app no se enteran solos del cambio de tema.
+    tintarChartJs();
+    this.temaSub = this.tema.cambios$.subscribe(() => {
+      tintarChartJs();
+      if (this.s) this.pintarGraficos();
+    });
   }
   ngOnDestroy() {
     this.sub?.unsubscribe();
     this.incomeSub?.unsubscribe();
     this.pendingSub?.unsubscribe();
+    this.temaSub?.unsubscribe();
   }
 
   async load() {
@@ -452,21 +521,44 @@ export class DashboardComponent implements OnInit, OnDestroy {
       // pantalla en blanco esperando datos que no van a llegar. No se relanza
       // para no dejar promesas rechazadas sueltas en cada llamador.
       this.sinConexion = true;
+      // Sin resumen no hay nada que pintar; seguir aquí reventaba con
+      // this.s null la primera vez que se abría la app sin red.
+      return;
     }
+    this.pintarGraficos();
+  }
+
+  /** Construye los datasets con los colores del tema activo. */
+  private pintarGraficos() {
     const days = this.s.cumulative.map((_: number, i: number) => i + 1);
     this.lineData = {
       labels: days,
       datasets: [
-        { label: 'Gasto acumulado', data: this.s.cumulative, borderColor: '#ff2e97', backgroundColor: 'rgba(255,46,151,.16)', fill: true, tension: .25, pointRadius: 0 },
-        { label: 'Ingreso del mes', data: days.map(() => this.s.incomeLine), borderColor: '#3dffb0', borderDash: [6, 6], pointRadius: 0 }
+        {
+          label: 'Gasto acumulado',
+          data: this.s.cumulative,
+          borderColor: this.tema.color('--magenta'),
+          backgroundColor: this.conAlfa(this.tema.color('--magenta'), .16),
+          fill: true, tension: .25, pointRadius: 0
+        },
+        {
+          label: 'Ingreso del mes',
+          data: days.map(() => this.s.incomeLine),
+          borderColor: this.tema.color('--green'),
+          borderDash: [6, 6], pointRadius: 0
+        }
       ]
     };
     this.donutData = {
       labels: Object.keys(this.s.byCategory),
       datasets: [{
         data: Object.values(this.s.byCategory) as number[],
-        backgroundColor: ['#ff2e97', '#00e5ff', '#3dffb0', '#a45cff', '#ffd93d', '#ff8a3d', '#7a7aff'],
-        borderColor: '#14142b',
+        backgroundColor: [
+          this.tema.color('--magenta'), this.tema.color('--neon'), this.tema.color('--green'),
+          this.tema.color('--violet'), this.tema.color('--yellow'), this.tema.color('--red'),
+          this.tema.color('--ink-soft')
+        ],
+        borderColor: this.tema.color('--card'),
         borderWidth: 2
       }]
     };

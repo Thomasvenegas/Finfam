@@ -17,7 +17,7 @@ import { API } from '../core/auth.service';
       Nunca te pediremos el número completo ni el código de seguridad.
     </p>
 
-    <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+    <div class="grid grid-2" style="margin-top:16px">
       <div class="card" *ngFor="let c of cards"
            style="background:linear-gradient(135deg,#2a0b4d,#0b2a4d 55%,#0b1030);color:#fff;border-color:var(--violet);box-shadow:0 0 24px rgba(164,92,255,.25)">
         <p style="margin:0;opacity:.8">{{ c.bank }}</p>
