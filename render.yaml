@@ -33,3 +33,9 @@ services:
         generateValue: true
       - key: INGEST_EMAIL_BASE
         sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true

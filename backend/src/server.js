@@ -11,6 +11,7 @@ import expenseRoutes from './routes/expenses.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import cardRoutes from './routes/cards.routes.js';
 import bankRoutes from './routes/bank.routes.js';
+import gmailRoutes from './routes/gmail.routes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +54,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/cards', cardRoutes);
 app.use('/api/bank', bankRoutes);
+app.use('/api/gmail', gmailRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

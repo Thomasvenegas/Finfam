@@ -25,6 +25,7 @@ model User {
   expenses      Expense[]
   cards         CreditCard[]
   bankLinks     BankLink[]
+  gmailLink     GmailLink?
 }
 
 // Datos recolectados en el onboarding
@@ -102,4 +103,17 @@ model BankLink {
   accountId    String?
   lastSyncAt   DateTime?
   createdAt    DateTime @default(now())
+}
+
+/// Conexión de solo lectura a Gmail. Guarda el refresh token cifrado y la lista
+/// de remitentes a vigilar, para no leer más correo del estrictamente necesario.
+model GmailLink {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email          String   // dirección de Gmail conectada
+  refreshToken   String   // cifrado con AES-256-GCM, nunca en texto plano
+  watchedSenders String[] // dominios/correos del banco a vigilar
+  lastSyncAt     DateTime?
+  createdAt      DateTime @default(now())
 }

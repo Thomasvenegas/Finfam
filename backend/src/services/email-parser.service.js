@@ -21,6 +21,18 @@ const INFLOW = /(abono|abonamos|dep[oó]sito|depositamos|transferencia recibida|
 // sustantivo al lado (compra/transacción/operación) en vez de la palabra sola.
 const VETO = /(rechazad|fallid|no autorizad|revers[ao]|anulaci[oó]n|anulad|estado de cuenta|resumen mensual|(?:compra|transacci[oó]n|operaci[oó]n)\s+cancelad)/i;
 
+/**
+ * Dominios que se vigilan por defecto al conectar Gmail. Sirven para acotar la
+ * búsqueda: así solo se descargan correos de bancos y no el resto de la bandeja.
+ * El usuario puede agregar el suyo si su banco no está en la lista.
+ */
+export const DEFAULT_BANK_SENDERS = [
+  'bancochile.cl', 'banchile.cl', 'santander.cl', 'bci.cl', 'bancoestado.cl',
+  'bancofalabella.cl', 'falabella.com', 'itau.cl', 'scotiabank.cl',
+  'bancoripley.cl', 'security.cl', 'bice.cl', 'consorcio.cl', 'coopeuch.cl',
+  'tenpo.cl', 'soymach.com', 'mercadopago.cl'
+];
+
 /** Emisores conocidos, detectados por el dominio del remitente. */
 const BANKS = [
   { name: 'Banco de Chile', match: /(bancochile|banchile)\./i },

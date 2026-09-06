@@ -78,37 +78,64 @@ declare const Fintoc: any;
       </div>
     </div>
 
-    <!-- Ingesta por correo: sirve con cualquier banco que mande notificaciones -->
+    <!-- Movimientos automáticos desde el correo del banco -->
     <div class="card" style="margin-top:16px">
       <h3>Conectar tu correo del banco</h3>
       <p class="muted" style="margin-top:0">
-        Sirve con cualquier banco. Reenvías los correos de aviso y cada uno aparece
-        automáticamente en «Últimos movimientos»: las compras descuentan del saldo
-        y los abonos lo suben.
+        Sirve con cualquier banco: las compras descuentan del saldo y los abonos lo suben,
+        apareciendo solos en «Últimos movimientos».
       </p>
 
-      <ng-container *ngIf="ingest?.configured; else ingestOff">
-        <label>Tu dirección personal de reenvío</label>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <code style="flex:1;min-width:260px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;word-break:break-all">{{ ingest?.address }}</code>
-          <button class="ghost" (click)="copyIngest()">{{ copied ? '¡Copiada!' : 'Copiar' }}</button>
-        </div>
-        <p class="muted" style="margin-bottom:6px">
-          Es única y personal: identifica que esos gastos son tuyos. No la compartas.
-        </p>
-        <ol class="muted" style="padding-left:18px;line-height:1.7">
-          <li>En Gmail: <strong>Configuración → Reenvío y correo POP/IMAP → Añadir dirección de reenvío</strong> y pega la de arriba.</li>
-          <li>Confirma la dirección (te avisamos cuando llegue el código).</li>
-          <li>Crea un filtro: <strong>Configuración → Filtros → Crear un filtro</strong>, en «De» pon el correo de tu banco (ej. <em>enviodigital&#64;bancochile.cl</em>) y marca <strong>Reenviarlo a</strong> esa dirección.</li>
-        </ol>
+      <div *ngIf="gmailMsg" [class.error]="gmailMsg.includes('No')" class="muted">{{ gmailMsg }}</div>
+
+      <!-- Vía principal: lectura directa de Gmail -->
+      <ng-container *ngIf="gmail?.configured">
+        <ng-container *ngIf="!gmail?.connected">
+          <button style="margin-top:8px" (click)="connectGmail()">Conectar Gmail</button>
+          <p class="muted">
+            Solo se leen los correos de tu banco: la búsqueda filtra por remitente,
+            nunca se descarga el resto de tu bandeja.
+          </p>
+        </ng-container>
+
+        <ng-container *ngIf="gmail?.connected">
+          <p style="margin:8px 0">
+            Conectado como <strong>{{ gmail.email }}</strong>
+            <span class="muted" *ngIf="gmail.lastSyncAt"> · última revisión {{ gmail.lastSyncAt | date:'short' }}</span>
+          </p>
+          <p class="muted" *ngIf="gmail.expiresAt">
+            Google corta el permiso el {{ gmail.expiresAt | date:'shortDate' }} (la app está en
+            modo de prueba). Cuando pase, vuelve a conectarlo aquí.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button (click)="syncGmail()" [disabled]="syncing">
+              {{ syncing ? 'Revisando…' : 'Revisar correos ahora' }}
+            </button>
+            <button class="ghost" (click)="disconnectGmail()">Desconectar</button>
+          </div>
+        </ng-container>
       </ng-container>
 
-      <ng-template #ingestOff>
-        <p class="muted">
-          La ingesta por correo aún no está habilitada en el servidor
-          (falta configurar <code>INGEST_EMAIL_BASE</code>).
-        </p>
-      </ng-template>
+      <p *ngIf="gmail && !gmail.configured" class="muted">
+        La conexión con Gmail aún no está configurada en el servidor.
+      </p>
+
+      <!-- Vía alternativa: reenvío, para quien no quiera dar acceso a Gmail -->
+      <details *ngIf="ingest?.configured" style="margin-top:16px">
+        <summary class="muted" style="cursor:pointer">
+          ¿Prefieres no conectar tu Gmail? Reenvía los correos en su lugar
+        </summary>
+        <div style="margin-top:10px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <code style="flex:1;min-width:260px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;word-break:break-all">{{ ingest?.address }}</code>
+            <button class="ghost" (click)="copyIngest()">{{ copied ? '¡Copiada!' : 'Copiar' }}</button>
+          </div>
+          <ol class="muted" style="padding-left:18px;line-height:1.7">
+            <li>Gmail → <strong>Configuración → Reenvío</strong> → añade esa dirección.</li>
+            <li>Crea un filtro con el correo de tu banco en «De» y marca <strong>Reenviarlo a</strong>.</li>
+          </ol>
+        </div>
+      </details>
     </div>
   </div>
   `
@@ -117,6 +144,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
   s: any = null;
   ingest: { address: string; configured: boolean } | null = null;
   copied = false;
+  gmail: any = null;
+  gmailMsg = '';
+  syncing = false;
 
   /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
   get movements(): any[] {
@@ -140,6 +170,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.load();
     this.loadIngestAddress();
+    this.loadGmailStatus();
+    this.readGmailReturn();
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
     this.sub = this.socket.expenseCreated$.subscribe(() => this.load());
@@ -176,6 +208,52 @@ export class DashboardComponent implements OnInit, OnDestroy {
     } catch {
       this.ingest = null;
     }
+  }
+
+  /** Estado de la conexión con Gmail. */
+  async loadGmailStatus() {
+    try {
+      this.gmail = await firstValueFrom(this.http.get<any>(`${API}/gmail/status`));
+    } catch {
+      this.gmail = null;
+    }
+  }
+
+  /** Lee el ?gmail=ok|error con que vuelve el usuario desde Google. */
+  readGmailReturn() {
+    const estado = new URLSearchParams(location.search).get('gmail');
+    if (!estado) return;
+    this.gmailMsg = estado === 'ok'
+      ? 'Gmail conectado. Revisando tus correos del último mes…'
+      : 'No se pudo conectar Gmail. Inténtalo de nuevo.';
+    history.replaceState({}, '', location.pathname);
+    if (estado === 'ok') this.syncGmail();
+  }
+
+  async connectGmail() {
+    const { url } = await firstValueFrom(this.http.get<{ url: string }>(`${API}/gmail/auth-url`));
+    location.href = url;
+  }
+
+  async syncGmail() {
+    this.syncing = true;
+    try {
+      const r = await firstValueFrom(this.http.post<any>(`${API}/gmail/sync`, {}));
+      this.gmailMsg = `Revisados ${r.revisados} correos, ${r.creados} movimientos nuevos.`;
+      await this.load();
+      await this.loadGmailStatus();
+    } catch (e: any) {
+      this.gmailMsg = e?.error?.error || 'No se pudo revisar el correo.';
+      await this.loadGmailStatus();
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  async disconnectGmail() {
+    await firstValueFrom(this.http.delete(`${API}/gmail/disconnect`));
+    this.gmailMsg = 'Gmail desconectado.';
+    this.loadGmailStatus();
   }
 
   async copyIngest() {
