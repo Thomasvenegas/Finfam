@@ -62,7 +62,17 @@ test('lee las cabeceras sin importar mayúsculas', () => {
 
 test('la consulta filtra por remitente: no baja correo ajeno al banco', () => {
   const q = buildQuery(['bancochile.cl', 'santander.cl'], 7);
-  assert.equal(q, '(from:bancochile.cl OR from:santander.cl) newer_than:7d');
+  assert.equal(q, 'in:inbox (from:bancochile.cl OR from:santander.cl) newer_than:7d');
+});
+
+test('solo mira la bandeja de entrada: nada de archivados, spam ni papelera', () => {
+  const q = buildQuery(['bancochile.cl'], 7);
+  assert.match(q, /^in:inbox /);
+});
+
+test('no se limita a la pestaña Principal, donde el banco rara vez cae', () => {
+  // category:primary dejaría fuera los avisos que Gmail manda a "Actualizaciones".
+  assert.doesNotMatch(buildQuery(['bancochile.cl'], 7), /category:/);
 });
 
 test('sin remitentes propios usa la lista por defecto', () => {

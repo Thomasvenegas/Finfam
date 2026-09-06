@@ -93,8 +93,9 @@ declare const Fintoc: any;
         <ng-container *ngIf="!gmail?.connected">
           <button style="margin-top:8px" (click)="connectGmail()">Conectar Gmail</button>
           <p class="muted">
-            Solo se leen los correos de tu banco: la búsqueda filtra por remitente,
-            nunca se descarga el resto de tu bandeja.
+            Solo se leen los correos de tu banco que estén en la bandeja de entrada:
+            la búsqueda filtra por remitente y omite archivados, spam y papelera.
+            Nunca se descarga el resto de tu correo.
           </p>
         </ng-container>
 

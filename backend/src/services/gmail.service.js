@@ -80,12 +80,20 @@ async function gmailFetch(path, accessToken) {
   return r.json();
 }
 
-/** Consulta de búsqueda: solo remitentes vigilados y solo lo reciente. */
+/**
+ * Consulta de búsqueda: solo la bandeja de entrada, solo remitentes vigilados
+ * y solo lo reciente.
+ *
+ * `in:inbox` deja fuera lo archivado, el spam, la papelera y los enviados. No
+ * se restringe a la pestaña "Principal" (category:primary) a propósito: Gmail
+ * suele clasificar los avisos de los bancos como "Actualizaciones", así que
+ * filtrar por esa pestaña haría perder gastos en silencio.
+ */
 export function buildQuery(senders = DEFAULT_BANK_SENDERS, days = 7) {
   const list = (senders?.length ? senders : DEFAULT_BANK_SENDERS)
     .map(s => `from:${s}`)
     .join(' OR ');
-  return `(${list}) newer_than:${days}d`;
+  return `in:inbox (${list}) newer_than:${days}d`;
 }
 
 /** Decodifica el cuerpo del mensaje, prefiriendo texto plano sobre HTML. */
