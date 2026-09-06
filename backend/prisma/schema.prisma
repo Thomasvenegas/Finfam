@@ -14,6 +14,9 @@ model User {
   passwordHash  String?   // null si el usuario entró solo con Google
   googleId      String?   @unique
   onboarded     Boolean   @default(false)
+  // Token que identifica al usuario en la dirección de reenvío de correos
+  // del banco (ej. ingest+<token>@...). Se genera al pedir la dirección.
+  ingestToken   String?   @unique
   createdAt     DateTime  @default(now())
 
   profile       Profile?

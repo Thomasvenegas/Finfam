@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { emitExpenseCreated } from '../server.js';
 import { listAccounts, listMovements, categorize } from '../services/fintoc.service.js';
+import { parseBankEmail, normalizeInbound } from '../services/email-parser.service.js';
 
 const router = Router();
 
@@ -113,37 +114,85 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
-// ---- Alternativa: ingesta de correos de notificación del banco
-// (ej: reenvío automático de los correos de "Compra con tarjeta" de Banco de Chile
-// a un servicio tipo Mailgun/SendGrid Inbound Parse que hace POST aquí)
+// ---- Ingesta de correos de notificación bancaria
+//
+// Flujo: el usuario crea un filtro en Gmail que reenvía los correos de su banco
+// a la dirección única que le entrega /ingest-address. Un servicio de inbound
+// parse (Postmark, CloudMailin, SendGrid...) recibe ese correo y hace POST aquí.
+// Así la app solo ve los correos del banco, nunca la bandeja completa.
+
+/** Inserta el token del usuario en la dirección base: base+token@dominio */
+function buildIngestAddress(token) {
+  const base = process.env.INGEST_EMAIL_BASE;
+  if (!base || !base.includes('@')) return null;
+  const [local, domain] = base.split('@');
+  return `${local}+${token}@${domain}`;
+}
+
+// Dirección personal de reenvío. Se genera el token la primera vez que se pide.
+router.get('/ingest-address', requireAuth, async (req, res, next) => {
+  try {
+    let user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { ingestToken: true }
+    });
+
+    if (!user?.ingestToken) {
+      user = await prisma.user.update({
+        where: { id: req.userId },
+        data: { ingestToken: crypto.randomBytes(8).toString('hex') },
+        select: { ingestToken: true }
+      });
+    }
+
+    const address = buildIngestAddress(user.ingestToken);
+    res.json({ address, token: user.ingestToken, configured: Boolean(address) });
+  } catch (e) { next(e); }
+});
+
 router.post('/email-ingest', async (req, res) => {
   try {
-    if (req.headers['x-ingest-key'] !== process.env.JWT_SECRET) return res.status(401).end();
-    const { userEmail, subject, text } = req.body;
+    const secret = process.env.EMAIL_INGEST_SECRET;
+    const provided = req.headers['x-ingest-key'] || req.query.key;
+    if (!secret || provided !== secret) return res.status(401).end();
 
-    // Patrón típico Banco de Chile: "compra por $12.345 en COMERCIO"
-    const match = text?.match(/\$\s?([\d.]+)\s+en\s+(.+?)(\.|\n|$)/i);
-    if (!match) return res.json({ parsed: false });
+    const mail = normalizeInbound(req.body);
 
-    const amount = Number(match[1].replace(/\./g, ''));
-    const merchant = match[2].trim();
-    const user = await prisma.user.findUnique({ where: { email: userEmail } });
-    if (!user) return res.status(404).end();
+    // El token va en la parte "+token" de la direccion a la que se reenvio.
+    const token = mail.recipients.match(/\+([a-z0-9]{8,64})@/i)?.[1];
+    if (!token) return res.json({ ok: true, reason: 'sin token de usuario' });
+
+    const user = await prisma.user.findUnique({ where: { ingestToken: token } });
+    if (!user) return res.json({ ok: true, reason: 'usuario no encontrado' });
+
+    const parsed = parseBankEmail(mail);
+    if (!parsed) return res.json({ ok: true, reason: 'no es una salida de dinero' });
+
+    // El id del mensaje evita duplicados si el proveedor reintenta el webhook.
+    const externalId = mail.messageId ? `email:${mail.messageId}` : undefined;
+    if (externalId) {
+      const existing = await prisma.expense.findUnique({ where: { externalId } });
+      if (existing) return res.json({ ok: true, reason: 'duplicado' });
+    }
 
     const expense = await prisma.expense.create({
       data: {
         userId: user.id,
-        description: merchant,
-        amount,
-        category: categorize(merchant),
-        source: 'email'
+        description: parsed.merchant,
+        amount: parsed.amount,
+        category: categorize(parsed.merchant),
+        source: 'email',
+        externalId,
+        date: parsed.date
       }
     });
+
     emitExpenseCreated(user.id, expense);
-    res.json({ parsed: true, subject });
+    res.json({ ok: true, created: true, amount: parsed.amount, bank: parsed.bank });
   } catch (e) {
-    console.error(e);
-    res.status(500).end();
+    console.error('email-ingest error', e.message);
+    // Se responde 200 para que el proveedor no reintente en bucle.
+    res.status(200).json({ ok: false });
   }
 });
 

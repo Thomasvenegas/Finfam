@@ -1,0 +1,192 @@
+/**
+ * Parser de correos de notificación bancaria (Chile).
+ *
+ * Objetivo: dado un correo reenviado desde Gmail, decidir si representa una
+ * SALIDA de dinero y, si es así, extraer monto y comercio. Es multi-banco:
+ * primero detecta el emisor por el remitente y luego aplica patrones genéricos
+ * en español, de modo que agregar un banco nuevo sea agregar una línea a BANKS.
+ *
+ * Nunca inventa un gasto: si no logra un monto confiable devuelve null y el
+ * correo se ignora (mejor perder una notificación que registrar un cobro falso).
+ */
+
+// Palabras que indican que salió dinero de la cuenta.
+const OUTFLOW = /(compra|cargo|cargamos|pago|pagaste|giro|transferencia enviada|enviaste|transferiste|suscripci[oó]n|debitamos|d[eé]bito por|avance|retiro)/i;
+
+// Entradas de dinero: no son gasto.
+const INFLOW = /(abono|dep[oó]sito|transferencia recibida|te transfirieron|recibiste)/i;
+
+// Eventos que anulan el cargo aunque el correo hable de una compra.
+// Ojo: en Chile "cancelar" suele significar pagar, por eso se exige el
+// sustantivo al lado (compra/transacción/operación) en vez de la palabra sola.
+const VETO = /(rechazad|fallid|no autorizad|revers[ao]|anulaci[oó]n|anulad|devoluci[oó]n|estado de cuenta|resumen mensual|(?:compra|transacci[oó]n|operaci[oó]n)\s+cancelad)/i;
+
+/** Emisores conocidos, detectados por el dominio del remitente. */
+const BANKS = [
+  { name: 'Banco de Chile', match: /(bancochile|banchile)\./i },
+  { name: 'Santander', match: /santander\./i },
+  { name: 'BCI', match: /(bci|tbanc)\./i },
+  { name: 'BancoEstado', match: /bancoestado\./i },
+  { name: 'Banco Falabella', match: /falabella\./i },
+  { name: 'Itaú', match: /itau\./i },
+  { name: 'Scotiabank', match: /scotiabank\./i },
+  { name: 'Banco Ripley', match: /ripley\./i },
+  { name: 'Security', match: /security\./i },
+  { name: 'Bice', match: /bice\./i },
+  { name: 'Consorcio', match: /consorcio\./i },
+  { name: 'Coopeuch', match: /coopeuch\./i },
+  { name: 'Tenpo', match: /tenpo\./i },
+  { name: 'Mach', match: /mach\./i },
+  { name: 'Mercado Pago', match: /mercadopago\./i }
+];
+
+/**
+ * Convierte un monto escrito en formato chileno a número.
+ * "12.345" -> 12345 | "12.345,50" -> 12345.5 | "1,234.56" -> 1234.56
+ */
+export function parseAmount(raw = '') {
+  const cleaned = String(raw).replace(/[^\d.,]/g, '');
+  if (!cleaned) return null;
+
+  const lastDot = cleaned.lastIndexOf('.');
+  const lastComma = cleaned.lastIndexOf(',');
+  let normalized;
+
+  if (lastDot === -1 && lastComma === -1) {
+    normalized = cleaned;
+  } else if (lastComma > lastDot) {
+    // La coma es el separador decimal (formato chileno): 12.345,50
+    normalized = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    const decimals = cleaned.length - lastDot - 1;
+    // "12.345" con 3 dígitos finales es separador de miles, no decimal.
+    normalized = decimals === 3
+      ? cleaned.replace(/[.,]/g, '')
+      : cleaned.replace(/,/g, '');
+  }
+
+  const value = Number(normalized);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Busca el monto del cargo. Muchos bancos incluyen también el saldo disponible,
+ * así que se prefiere el monto que aparece más cerca (después) de la palabra
+ * que denota el cargo.
+ */
+function extractAmount(text) {
+  const candidates = [...text.matchAll(/(?:\$|CLP\$?)\s*([\d][\d.,]*)/gi)]
+    .map(m => ({ value: parseAmount(m[1]), index: m.index }))
+    .filter(c => c.value);
+
+  if (!candidates.length) {
+    const withWord = text.match(/por\s+([\d][\d.,]*)\s*pesos/i);
+    return withWord ? parseAmount(withWord[1]) : null;
+  }
+
+  const anchor = text.search(OUTFLOW);
+  if (anchor === -1) return candidates[0].value;
+
+  const after = candidates.filter(c => c.index > anchor);
+  return (after[0] || candidates[0]).value;
+}
+
+/** Extrae el nombre del comercio o destinatario. */
+function extractMerchant(text, subject) {
+  // Frases que cierran el nombre del comercio: fecha, medio de pago, monto...
+  const END = String.raw`(?=\s+(?:el|los)\s+d[ií]a\b|\s+el\s+\d|\s+por\s+(?:\$|CLP)|\s+con\s+(?:tu\s+|su\s+|la\s+|el\s+)?(?:tarjeta|cuenta)|\s+a\s+las\s+\d|[.,;\n]|$)`;
+
+  const patterns = [
+    // "compra por $12.345 en LIDER EL BOSQUE el 05/09/2026"
+    new RegExp(String.raw`\ben\s+(?:el\s+comercio\s+)?["']?(.{2,60}?)["']?` + END, 'i'),
+    // "transferencia enviada a JUAN PEREZ"
+    new RegExp(String.raw`\b(?:a|hacia)\s+(?:favor de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END),
+    // "Comercio: LIDER"
+    /\bcomercio\s*:\s*([^\n.,;]{2,60})/i,
+    // "en el establecimiento LIDER"
+    /\bestablecimiento\s+([^\n.,;]{2,60})/i
+  ];
+
+  for (const re of patterns) {
+    const m = text.match(re);
+    const merchant = m?.[1]?.trim().replace(/\s+/g, ' ');
+    // Descarta capturas que en realidad son fragmentos de la frase.
+    if (merchant && merchant.length >= 2 &&
+        !/^(tu|su|la|el|los|las|una?|cuenta|tarjeta|pesos)$/i.test(merchant)) {
+      return merchant;
+    }
+  }
+
+  return subject?.trim() || 'Cargo bancario';
+}
+
+/** Lee la fecha del correo; si no la encuentra, usa la de recepción. */
+function extractDate(text, receivedAt) {
+  const m = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+  if (m) {
+    const [, d, mo, y] = m;
+    const year = y.length === 2 ? 2000 + Number(y) : Number(y);
+    const date = new Date(year, Number(mo) - 1, Number(d));
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return receivedAt ? new Date(receivedAt) : new Date();
+}
+
+/** Identifica el banco a partir del remitente. */
+export function detectBank(from = '') {
+  return BANKS.find(b => b.match.test(from))?.name || null;
+}
+
+/**
+ * Analiza un correo bancario.
+ * @returns {{amount:number, merchant:string, date:Date, bank:string|null}|null}
+ */
+export function parseBankEmail({ from = '', subject = '', text = '', receivedAt } = {}) {
+  const body = `${subject}\n${text}`.replace(/\r/g, '');
+  if (!body.trim()) return null;
+
+  if (VETO.test(body)) return null;
+  if (!OUTFLOW.test(body)) return null;
+  if (INFLOW.test(body) && !OUTFLOW.test(body)) return null;
+
+  const amount = extractAmount(body);
+  if (!amount) return null;
+
+  return {
+    amount,
+    merchant: extractMerchant(body, subject),
+    date: extractDate(body, receivedAt),
+    bank: detectBank(from)
+  };
+}
+
+/**
+ * Normaliza el payload del correo según el proveedor de inbound parse que lo
+ * envíe (Postmark, CloudMailin, SendGrid...), para que el resto del código
+ * trabaje siempre con la misma forma.
+ */
+export function normalizeInbound(body = {}) {
+  const headers = body.headers || {};
+  const html = body.HtmlBody || body.html || '';
+  const text = body.TextBody || body.plain || body.text ||
+    // Si solo viene HTML, se limpian las etiquetas para poder aplicar el parser.
+    html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
+
+  const recipients = [
+    body.OriginalRecipient,
+    body.To,
+    ...(body.ToFull || []).map(t => t?.Email),
+    body.envelope?.to,
+    body.to,
+    body.recipient
+  ].filter(Boolean).join(' ');
+
+  return {
+    from: body.From || body.from || headers.from || '',
+    subject: body.Subject || body.subject || headers.subject || '',
+    text: (text || '').trim(),
+    recipients,
+    messageId: body.MessageID || body.message_id || headers.message_id || '',
+    receivedAt: body.Date || body.date || headers.date || null
+  };
+}

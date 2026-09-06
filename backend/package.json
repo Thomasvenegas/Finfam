@@ -6,7 +6,8 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "@prisma/client": "^5.16.0",

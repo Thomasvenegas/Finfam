@@ -29,3 +29,7 @@ services:
         value: whsec_placeholder
       - key: FRONTEND_URL
         value: http://localhost:4200
+      - key: EMAIL_INGEST_SECRET
+        generateValue: true
+      - key: INGEST_EMAIL_BASE
+        sync: false

@@ -75,11 +75,45 @@ declare const Fintoc: any;
         <p class="muted">Vía Fintoc: tus movimientos llegan solos y el saldo baja al instante.</p>
       </div>
     </div>
+
+    <!-- Ingesta por correo: sirve con cualquier banco que mande notificaciones -->
+    <div class="card" style="margin-top:16px">
+      <h3>Conectar tu correo del banco</h3>
+      <p class="muted" style="margin-top:0">
+        Sirve con cualquier banco. Reenvías solo los correos de aviso de compra y cada
+        uno aparece automáticamente en «Últimos movimientos», descontando del saldo.
+      </p>
+
+      <ng-container *ngIf="ingest?.configured; else ingestOff">
+        <label>Tu dirección personal de reenvío</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <code style="flex:1;min-width:260px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;word-break:break-all">{{ ingest?.address }}</code>
+          <button class="ghost" (click)="copyIngest()">{{ copied ? '¡Copiada!' : 'Copiar' }}</button>
+        </div>
+        <p class="muted" style="margin-bottom:6px">
+          Es única y personal: identifica que esos gastos son tuyos. No la compartas.
+        </p>
+        <ol class="muted" style="padding-left:18px;line-height:1.7">
+          <li>En Gmail: <strong>Configuración → Reenvío y correo POP/IMAP → Añadir dirección de reenvío</strong> y pega la de arriba.</li>
+          <li>Confirma la dirección (te avisamos cuando llegue el código).</li>
+          <li>Crea un filtro: <strong>Configuración → Filtros → Crear un filtro</strong>, en «De» pon el correo de tu banco (ej. <em>enviodigital&#64;bancochile.cl</em>) y marca <strong>Reenviarlo a</strong> esa dirección.</li>
+        </ol>
+      </ng-container>
+
+      <ng-template #ingestOff>
+        <p class="muted">
+          La ingesta por correo aún no está habilitada en el servidor
+          (falta configurar <code>INGEST_EMAIL_BASE</code>).
+        </p>
+      </ng-template>
+    </div>
   </div>
   `
 })
 export class DashboardComponent implements OnInit, OnDestroy {
   s: any = null;
+  ingest: { address: string; configured: boolean } | null = null;
+  copied = false;
   newDesc = ''; newAmount: number | null = null; newCategory = 'supermercado';
   categories = ['supermercado', 'comida', 'transporte', 'salud', 'cuentas', 'ocio', 'otros'];
   private sub?: Subscription;
@@ -95,6 +129,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.load();
+    this.loadIngestAddress();
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
     this.sub = this.socket.expenseCreated$.subscribe(() => this.load());
@@ -118,6 +153,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
         backgroundColor: ['#b4653f', '#1f6f50', '#5b6675', '#d8a47f', '#8fb3a3', '#b03a34', '#1b2431']
       }]
     };
+  }
+
+  /** Dirección personal a la que el usuario reenvía los correos de su banco. */
+  async loadIngestAddress() {
+    try {
+      this.ingest = await firstValueFrom(
+        this.http.get<{ address: string; configured: boolean }>(`${API}/bank/ingest-address`)
+      );
+    } catch {
+      this.ingest = null;
+    }
+  }
+
+  async copyIngest() {
+    if (!this.ingest?.address) return;
+    await navigator.clipboard.writeText(this.ingest.address);
+    this.copied = true;
+    setTimeout(() => (this.copied = false), 2000);
   }
 
   async addExpense() {
