@@ -13,13 +13,13 @@
 // Palabras que indican que salió dinero de la cuenta.
 const OUTFLOW = /(compra|cargo|cargamos|pago|pagaste|giro|transferencia enviada|enviaste|transferiste|suscripci[oó]n|debitamos|d[eé]bito por|avance|retiro)/i;
 
-// Entradas de dinero: no son gasto.
-const INFLOW = /(abono|dep[oó]sito|transferencia recibida|te transfirieron|recibiste)/i;
+// Entradas de dinero.
+const INFLOW = /(abono|abonamos|dep[oó]sito|depositamos|transferencia recibida|te transfirieron|recibiste|acreditamos|devoluci[oó]n|reembolso|remuneraci[oó]n|sueldo)/i;
 
 // Eventos que anulan el cargo aunque el correo hable de una compra.
 // Ojo: en Chile "cancelar" suele significar pagar, por eso se exige el
 // sustantivo al lado (compra/transacción/operación) en vez de la palabra sola.
-const VETO = /(rechazad|fallid|no autorizad|revers[ao]|anulaci[oó]n|anulad|devoluci[oó]n|estado de cuenta|resumen mensual|(?:compra|transacci[oó]n|operaci[oó]n)\s+cancelad)/i;
+const VETO = /(rechazad|fallid|no autorizad|revers[ao]|anulaci[oó]n|anulad|estado de cuenta|resumen mensual|(?:compra|transacci[oó]n|operaci[oó]n)\s+cancelad)/i;
 
 /** Emisores conocidos, detectados por el dominio del remitente. */
 const BANKS = [
@@ -45,7 +45,8 @@ const BANKS = [
  * "12.345" -> 12345 | "12.345,50" -> 12345.5 | "1,234.56" -> 1234.56
  */
 export function parseAmount(raw = '') {
-  const cleaned = String(raw).replace(/[^\d.,]/g, '');
+  // Se descartan separadores sueltos al inicio/fin ("300.000." -> "300.000").
+  const cleaned = String(raw).replace(/[^\d.,]/g, '').replace(/^[.,]+|[.,]+$/g, '');
   if (!cleaned) return null;
 
   const lastDot = cleaned.lastIndexOf('.');
@@ -74,17 +75,17 @@ export function parseAmount(raw = '') {
  * así que se prefiere el monto que aparece más cerca (después) de la palabra
  * que denota el cargo.
  */
-function extractAmount(text) {
-  const candidates = [...text.matchAll(/(?:\$|CLP\$?)\s*([\d][\d.,]*)/gi)]
+function extractAmount(text, anchorRe = OUTFLOW) {
+  const candidates = [...text.matchAll(/(?:\$|CLP\$?)\s*(\d[\d.,]*\d|\d)/gi)]
     .map(m => ({ value: parseAmount(m[1]), index: m.index }))
     .filter(c => c.value);
 
   if (!candidates.length) {
-    const withWord = text.match(/por\s+([\d][\d.,]*)\s*pesos/i);
+    const withWord = text.match(/por\s+(\d[\d.,]*\d|\d)\s*pesos/i);
     return withWord ? parseAmount(withWord[1]) : null;
   }
 
-  const anchor = text.search(OUTFLOW);
+  const anchor = text.search(anchorRe);
   if (anchor === -1) return candidates[0].value;
 
   const after = candidates.filter(c => c.index > anchor);
@@ -101,6 +102,8 @@ function extractMerchant(text, subject) {
     new RegExp(String.raw`\ben\s+(?:el\s+comercio\s+)?["']?(.{2,60}?)["']?` + END, 'i'),
     // "transferencia enviada a JUAN PEREZ"
     new RegExp(String.raw`\b(?:a|hacia)\s+(?:favor de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END),
+    // "abono de MARIA SOTO" / "transferencia de JUAN"
+    new RegExp(String.raw`\bde\s+(?:parte de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END),
     // "Comercio: LIDER"
     /\bcomercio\s*:\s*([^\n.,;]{2,60})/i,
     // "en el establecimiento LIDER"
@@ -138,21 +141,33 @@ export function detectBank(from = '') {
 }
 
 /**
- * Analiza un correo bancario.
- * @returns {{amount:number, merchant:string, date:Date, bank:string|null}|null}
+ * Analiza un correo bancario y lo clasifica como gasto o ingreso.
+ * @returns {{type:'expense'|'income', amount:number, merchant:string,
+ *            date:Date, bank:string|null}|null}
  */
 export function parseBankEmail({ from = '', subject = '', text = '', receivedAt } = {}) {
   const body = `${subject}\n${text}`.replace(/\r/g, '');
   if (!body.trim()) return null;
 
+  // Cargos que no llegaron a ocurrir: no mueven plata en ninguna dirección.
   if (VETO.test(body)) return null;
-  if (!OUTFLOW.test(body)) return null;
-  if (INFLOW.test(body) && !OUTFLOW.test(body)) return null;
 
-  const amount = extractAmount(body);
+  const outAt = body.search(OUTFLOW);
+  const inAt = body.search(INFLOW);
+  if (outAt === -1 && inAt === -1) return null;
+
+  // Si el correo menciona ambas cosas, manda la que aparece primero
+  // (el asunto suele decir de qué se trata: "Abono en tu cuenta...").
+  let type;
+  if (outAt === -1) type = 'income';
+  else if (inAt === -1) type = 'expense';
+  else type = inAt < outAt ? 'income' : 'expense';
+
+  const amount = extractAmount(body, type === 'income' ? INFLOW : OUTFLOW);
   if (!amount) return null;
 
   return {
+    type,
     amount,
     merchant: extractMerchant(body, subject),
     date: extractDate(body, receivedAt),

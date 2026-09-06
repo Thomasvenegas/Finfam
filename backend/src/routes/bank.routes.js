@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
-import { emitExpenseCreated } from '../server.js';
+import { emitExpenseCreated, emitIncomeCreated } from '../server.js';
 import { listAccounts, listMovements, categorize } from '../services/fintoc.service.js';
 import { parseBankEmail, normalizeInbound } from '../services/email-parser.service.js';
 
@@ -166,10 +166,31 @@ router.post('/email-ingest', async (req, res) => {
     if (!user) return res.json({ ok: true, reason: 'usuario no encontrado' });
 
     const parsed = parseBankEmail(mail);
-    if (!parsed) return res.json({ ok: true, reason: 'no es una salida de dinero' });
+    if (!parsed) return res.json({ ok: true, reason: 'no mueve dinero' });
 
     // El id del mensaje evita duplicados si el proveedor reintenta el webhook.
     const externalId = mail.messageId ? `email:${mail.messageId}` : undefined;
+
+    // Un abono se guarda como ingreso puntual del mes, no como gasto.
+    if (parsed.type === 'income') {
+      if (externalId) {
+        const dup = await prisma.income.findUnique({ where: { externalId } });
+        if (dup) return res.json({ ok: true, reason: 'duplicado' });
+      }
+      const income = await prisma.income.create({
+        data: {
+          userId: user.id,
+          label: parsed.merchant,
+          amount: parsed.amount,
+          recurring: false,
+          externalId,
+          date: parsed.date
+        }
+      });
+      emitIncomeCreated(user.id, income);
+      return res.json({ ok: true, created: 'income', amount: parsed.amount, bank: parsed.bank });
+    }
+
     if (externalId) {
       const existing = await prisma.expense.findUnique({ where: { externalId } });
       if (existing) return res.json({ ok: true, reason: 'duplicado' });
@@ -188,7 +209,7 @@ router.post('/email-ingest', async (req, res) => {
     });
 
     emitExpenseCreated(user.id, expense);
-    res.json({ ok: true, created: true, amount: parsed.amount, bank: parsed.bank });
+    res.json({ ok: true, created: 'expense', amount: parsed.amount, bank: parsed.bank });
   } catch (e) {
     console.error('email-ingest error', e.message);
     // Se responde 200 para que el proveedor no reintente en bucle.

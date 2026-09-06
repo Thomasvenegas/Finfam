@@ -9,6 +9,7 @@ import { environment } from '../../environments/environment';
 export class SocketService {
   private socket?: Socket;
   expenseCreated$ = new Subject<any>();
+  incomeCreated$ = new Subject<any>();
 
   connect() {
     if (this.socket?.connected) return;
@@ -16,6 +17,7 @@ export class SocketService {
       auth: { token: localStorage.getItem('finfam_token') }
     });
     this.socket.on('expense:created', e => this.expenseCreated$.next(e));
+    this.socket.on('income:created', i => this.incomeCreated$.next(i));
   }
 
   disconnect() { this.socket?.disconnect(); }

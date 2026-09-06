@@ -25,6 +25,7 @@ test('Banco de Chile: compra con tarjeta', () => {
     subject: 'Compra con Tarjeta de Crédito',
     text: 'Te informamos que se ha realizado una compra por $12.345 en LIDER EL BOSQUE el 05/09/2026.'
   });
+  assert.equal(r.type, 'expense');
   assert.equal(r.amount, 12345);
   assert.equal(r.merchant, 'LIDER EL BOSQUE');
   assert.equal(r.bank, 'Banco de Chile');
@@ -56,6 +57,7 @@ test('BancoEstado: transferencia enviada', () => {
     subject: 'Transferencia realizada',
     text: 'Transferencia enviada por $150.000 a JUAN PEREZ el 03/09/2026.'
   });
+  assert.equal(r.type, 'expense');
   assert.equal(r.amount, 150000);
   assert.equal(r.merchant, 'JUAN PEREZ');
 });
@@ -69,18 +71,44 @@ test('monto con CLP en vez de $', () => {
   assert.equal(r.amount, 23500);
 });
 
-test('ignora abonos y transferencias recibidas', () => {
-  assert.equal(parseBankEmail({
+test('reconoce abonos como ingreso', () => {
+  const abono = parseBankEmail({
     from: 'enviodigital@bancochile.cl',
     subject: 'Abono en tu cuenta',
     text: 'Te informamos de un abono por $500.000 en tu cuenta corriente.'
-  }), null);
+  });
+  assert.equal(abono.type, 'income');
+  assert.equal(abono.amount, 500000);
 
-  assert.equal(parseBankEmail({
+  const transferencia = parseBankEmail({
     from: 'no-responder@bancoestado.cl',
     subject: 'Transferencia recibida',
     text: 'Has recibido una transferencia por $80.000 de MARIA SOTO.'
-  }), null);
+  });
+  assert.equal(transferencia.type, 'income');
+  assert.equal(transferencia.amount, 80000);
+  assert.equal(transferencia.merchant, 'MARIA SOTO');
+});
+
+test('un correo que menciona ambas cosas se resuelve por lo que aparece primero', () => {
+  // El asunto manda: es un abono, aunque el cuerpo hable de compras.
+  const r = parseBankEmail({
+    from: 'enviodigital@bancochile.cl',
+    subject: 'Abono en tu cuenta',
+    text: 'Abono por $300.000. Recuerda que tus compras del mes suman $120.000.'
+  });
+  assert.equal(r.type, 'income');
+  assert.equal(r.amount, 300000);
+});
+
+test('las devoluciones cuentan como ingreso', () => {
+  const r = parseBankEmail({
+    from: 'notificaciones@santander.cl',
+    subject: 'Devolución de compra',
+    text: 'Se realizó una devolución por $15.000 de FALABELLA.'
+  });
+  assert.equal(r.type, 'income');
+  assert.equal(r.amount, 15000);
 });
 
 test('ignora reversos, rechazos y resúmenes', () => {
@@ -184,4 +212,14 @@ test('si solo viene HTML, lo convierte a texto parseable', () => {
   const r = parseBankEmail(n);
   assert.equal(r.amount, 9500);
   assert.equal(r.merchant, 'JUMBO KENNEDY');
+});
+
+test('monto al final de la frase no arrastra el punto', () => {
+  assert.equal(parseAmount('300.000.'), 300000);
+  const r = parseBankEmail({
+    from: 'alertas@bci.cl',
+    subject: 'Compra',
+    text: 'Se realizó una compra por $12.500.'
+  });
+  assert.equal(r.amount, 12500);
 });

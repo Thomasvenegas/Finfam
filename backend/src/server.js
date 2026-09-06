@@ -37,6 +37,11 @@ export function emitExpenseCreated(userId, expense) {
   io.to(`user:${userId}`).emit('expense:created', expense);
 }
 
+/** Ídem para un ingreso detectado (ej. un abono avisado por correo). */
+export function emitIncomeCreated(userId, income) {
+  io.to(`user:${userId}`).emit('income:created', income);
+}
+
 app.use(cors({ origin: process.env.FRONTEND_URL }));
 // El webhook de Fintoc necesita el body crudo para verificar la firma
 app.use('/api/bank/webhook', express.raw({ type: 'application/json' }));

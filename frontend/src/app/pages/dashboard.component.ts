@@ -62,12 +62,14 @@ declare const Fintoc: any;
       <!-- Últimos movimientos + banco -->
       <div class="card">
         <h3>Últimos movimientos</h3>
-        <div *ngIf="!s.lastExpenses.length" class="muted">
-          Aún no hay gastos este mes. Registra uno o conecta tu banco.
+        <div *ngIf="!movements.length" class="muted">
+          Aún no hay movimientos este mes. Registra un gasto o conecta tu banco.
         </div>
-        <div *ngFor="let e of s.lastExpenses" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)">
-          <span>{{ e.description }} <span class="muted">· {{ e.category }} · {{ e.source }}</span></span>
-          <strong>-{{ e.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong>
+        <div *ngFor="let m of movements" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)">
+          <span>{{ m.description }} <span class="muted">· {{ m.category }} · {{ m.source }}</span></span>
+          <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'">
+            {{ m.type === 'income' ? '+' : '-' }}{{ m.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
+          </strong>
         </div>
         <button class="ghost" style="margin-top:14px" (click)="connectBank()">
           Conectar Banco de Chile (y otros)
@@ -80,8 +82,9 @@ declare const Fintoc: any;
     <div class="card" style="margin-top:16px">
       <h3>Conectar tu correo del banco</h3>
       <p class="muted" style="margin-top:0">
-        Sirve con cualquier banco. Reenvías solo los correos de aviso de compra y cada
-        uno aparece automáticamente en «Últimos movimientos», descontando del saldo.
+        Sirve con cualquier banco. Reenvías los correos de aviso y cada uno aparece
+        automáticamente en «Últimos movimientos»: las compras descuentan del saldo
+        y los abonos lo suben.
       </p>
 
       <ng-container *ngIf="ingest?.configured; else ingestOff">
@@ -114,9 +117,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
   s: any = null;
   ingest: { address: string; configured: boolean } | null = null;
   copied = false;
+
+  /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
+  get movements(): any[] {
+    if (this.s?.lastMovements) return this.s.lastMovements;
+    return (this.s?.lastExpenses || []).map((e: any) => ({ ...e, type: 'expense' }));
+  }
   newDesc = ''; newAmount: number | null = null; newCategory = 'supermercado';
   categories = ['supermercado', 'comida', 'transporte', 'salud', 'cuentas', 'ocio', 'otros'];
   private sub?: Subscription;
+  private incomeSub?: Subscription;
 
   lineData: ChartConfiguration<'line'>['data'] = { labels: [], datasets: [] };
   lineOpts: ChartConfiguration<'line'>['options'] = {
@@ -133,8 +143,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
     this.sub = this.socket.expenseCreated$.subscribe(() => this.load());
+    // Un abono avisado por correo también mueve el saldo: refrescar igual.
+    this.incomeSub = this.socket.incomeCreated$.subscribe(() => this.load());
   }
-  ngOnDestroy() { this.sub?.unsubscribe(); }
+  ngOnDestroy() { this.sub?.unsubscribe(); this.incomeSub?.unsubscribe(); }
 
   async load() {
     this.s = await firstValueFrom(this.http.get<any>(`${API}/dashboard/summary`));

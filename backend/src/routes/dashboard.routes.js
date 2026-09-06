@@ -13,7 +13,16 @@ router.get('/summary', async (req, res, next) => {
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     const [incomes, fixed, expenses] = await Promise.all([
-      prisma.income.findMany({ where: { userId: req.userId, recurring: true } }),
+      prisma.income.findMany({
+        where: {
+          userId: req.userId,
+          OR: [
+            { recurring: true }, // sueldo y otros ingresos fijos del onboarding
+            { recurring: false, date: { gte: monthStart, lte: monthEnd } } // abonos del mes
+          ]
+        },
+        orderBy: { date: 'asc' }
+      }),
       prisma.fixedExpense.findMany({ where: { userId: req.userId } }),
       prisma.expense.findMany({
         where: { userId: req.userId, date: { gte: monthStart, lte: monthEnd } },
@@ -42,6 +51,30 @@ router.get('/summary', async (req, res, next) => {
     let acc = totalFixed; // los gastos fijos parten comprometidos desde el día 1
     const cumulative = dailyCumulative.map(d => (acc += d));
 
+    // "Últimos movimientos": gastos y abonos del mes mezclados por fecha.
+    const movements = [
+      ...expenses.map(e => ({
+        id: e.id,
+        type: 'expense',
+        description: e.description,
+        amount: Number(e.amount),
+        category: e.category,
+        source: e.source,
+        date: e.date
+      })),
+      ...incomes
+        .filter(i => !i.recurring)
+        .map(i => ({
+          id: i.id,
+          type: 'income',
+          description: i.label,
+          amount: Number(i.amount),
+          category: 'ingreso',
+          source: i.externalId?.startsWith('email:') ? 'email' : 'manual',
+          date: i.date
+        }))
+    ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
+
     res.json({
       month: now.toISOString().slice(0, 7),
       totalIncome,
@@ -53,7 +86,8 @@ router.get('/summary', async (req, res, next) => {
       byCategory,
       cumulative,          // gasto acumulado día a día
       incomeLine: totalIncome, // referencia horizontal en el gráfico
-      lastExpenses: expenses.slice(-10).reverse()
+      lastExpenses: expenses.slice(-10).reverse(),
+      lastMovements: movements
     });
   } catch (e) { next(e); }
 });
