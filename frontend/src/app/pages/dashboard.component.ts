@@ -78,25 +78,111 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
         <div *ngIf="!movements.length" class="muted">
           Aún no hay movimientos este mes. Registra un gasto o conecta tu banco.
         </div>
-        <div *ngFor="let m of movements" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)">
-          <span style="flex:1;min-width:0">
-            {{ m.description }}
-            <span class="muted">· {{ m.category }} · {{ m.source }}</span>
-          </span>
-          <a *ngIf="mailUrl(m) as url" [href]="url" target="_blank" rel="noopener"
-             class="muted" title="Abrir en Gmail el correo del que salió este movimiento"
-             style="white-space:nowrap">✉ Ver correo</a>
-          <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
-            {{ m.type === 'income' ? '+' : '-' }}{{ m.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
-          </strong>
-          <button *ngIf="m.type === 'expense'" class="ghost" (click)="removeExpense(m)"
-                  [disabled]="busyId === m.id" title="Quitar este gasto y devolver el monto al saldo"
-                  style="padding:2px 8px;line-height:1.4">✕</button>
+        <div *ngFor="let m of movements" style="padding:6px 0;border-bottom:1px solid var(--line)">
+
+          <!-- Lectura -->
+          <div *ngIf="editandoGasto !== m.id" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <span style="flex:1;min-width:0">
+              {{ m.description }}
+              <span class="muted">· {{ m.category }} · {{ m.source }}</span>
+            </span>
+            <a *ngIf="mailUrl(m) as url" [href]="url" target="_blank" rel="noopener"
+               class="muted" title="Abrir en Gmail el correo del que salió este movimiento"
+               style="white-space:nowrap">✉ Ver correo</a>
+            <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
+              {{ m.type === 'income' ? '+' : '-' }}{{ m.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
+            </strong>
+            <button *ngIf="m.type === 'expense'" class="ghost" (click)="editarGasto(m)"
+                    title="Corregir glosa, monto o categoría"
+                    style="padding:2px 8px;line-height:1.4">✎</button>
+            <button *ngIf="m.type === 'expense'" class="ghost" (click)="removeExpense(m)"
+                    [disabled]="busyId === m.id" title="Quitar este gasto y devolver el monto al saldo"
+                    style="padding:2px 8px;line-height:1.4">✕</button>
+          </div>
+
+          <!-- Edición -->
+          <div *ngIf="editandoGasto === m.id" style="display:grid;gap:8px;padding:8px 0">
+            <input [(ngModel)]="borrador.description" placeholder="Descripción">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input type="number" [(ngModel)]="borrador.amount" placeholder="Monto" style="flex:1;min-width:120px">
+              <select [(ngModel)]="borrador.category" style="flex:1;min-width:140px">
+                <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button (click)="guardarGasto(m)" [disabled]="busyId === m.id || !borrador.description || !borrador.amount">
+                Guardar
+              </button>
+              <button class="ghost" (click)="editandoGasto = null">Cancelar</button>
+            </div>
+          </div>
         </div>
         <button class="ghost" style="margin-top:14px" (click)="connectBank()">
           Conectar Banco de Chile (y otros)
         </button>
         <p class="muted">Vía Fintoc: tus movimientos llegan solos y el saldo baja al instante.</p>
+      </div>
+    </div>
+
+    <!-- Gastos fijos: se descuentan todos los meses, así que tienen que
+         poder corregirse y no quedar congelados desde el onboarding -->
+    <div class="card" style="margin-top:16px">
+      <h3>Gastos fijos del mes</h3>
+      <p class="muted" style="margin-top:0">
+        Se descuentan de tu saldo todos los meses. Total:
+        <strong>{{ s.totalFixed | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong>
+      </p>
+
+      <div *ngIf="!fijos.length" class="muted">Todavía no tienes gastos fijos registrados.</div>
+
+      <div *ngFor="let f of fijos" style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div *ngIf="editandoFijo !== f.id" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <span style="flex:1;min-width:0">
+            {{ f.label }}
+            <span class="muted">· {{ f.category }}<span *ngIf="f.dueDay"> · día {{ f.dueDay }}</span></span>
+          </span>
+          <strong style="white-space:nowrap">{{ f.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong>
+          <button class="ghost" (click)="editarFijo(f)" title="Editar"
+                  style="padding:2px 8px;line-height:1.4">✎</button>
+          <button class="ghost" (click)="borrarFijo(f)" [disabled]="busyId === f.id" title="Quitar"
+                  style="padding:2px 8px;line-height:1.4">✕</button>
+        </div>
+
+        <div *ngIf="editandoFijo === f.id" style="display:grid;gap:8px;padding:4px 0">
+          <input [(ngModel)]="borradorFijo.label" placeholder="Nombre (ej. Dividendo)">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="number" [(ngModel)]="borradorFijo.amount" placeholder="Monto" style="flex:1;min-width:110px">
+            <select [(ngModel)]="borradorFijo.category" style="flex:1;min-width:130px">
+              <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
+            </select>
+            <input type="number" [(ngModel)]="borradorFijo.dueDay" placeholder="Día" min="1" max="31" style="width:90px">
+          </div>
+          <div style="display:flex;gap:8px">
+            <button (click)="guardarFijo(f)" [disabled]="busyId === f.id || !borradorFijo.label || !borradorFijo.amount">
+              Guardar
+            </button>
+            <button class="ghost" (click)="editandoFijo = null">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="!agregandoFijo" style="margin-top:12px">
+        <button class="ghost" (click)="nuevoFijo()">+ Agregar gasto fijo</button>
+      </div>
+
+      <div *ngIf="agregandoFijo" style="display:grid;gap:8px;margin-top:12px">
+        <input [(ngModel)]="borradorFijo.label" placeholder="Nombre (ej. Dividendo)">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input type="number" [(ngModel)]="borradorFijo.amount" placeholder="Monto" style="flex:1;min-width:110px">
+          <select [(ngModel)]="borradorFijo.category" style="flex:1;min-width:130px">
+            <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
+          </select>
+          <input type="number" [(ngModel)]="borradorFijo.dueDay" placeholder="Día" min="1" max="31" style="width:90px">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button (click)="crearFijo()" [disabled]="!borradorFijo.label || !borradorFijo.amount">Agregar</button>
+          <button class="ghost" (click)="agregandoFijo = false">Cancelar</button>
+        </div>
       </div>
     </div>
 
@@ -207,6 +293,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   busyId: string | null = null;
   sinConexion = false;
 
+  // Edición en línea: se trabaja sobre un borrador para poder cancelar
+  // sin haber tocado lo que se ve en pantalla.
+  editandoGasto: string | null = null;
+  borrador: any = {};
+  fijos: any[] = [];
+  editandoFijo: string | null = null;
+  agregandoFijo = false;
+  borradorFijo: any = {};
+
   /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
   get movements(): any[] {
     if (this.s?.lastMovements) return this.s.lastMovements;
@@ -232,6 +327,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadIngestAddress();
     this.loadGmailStatus();
     this.loadPending();
+    this.loadFijos();
     this.readGmailReturn();
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
@@ -285,6 +381,94 @@ export class DashboardComponent implements OnInit, OnDestroy {
     } catch {
       this.ingest = null;
     }
+  }
+
+  // ---- Corregir un gasto ya registrado ----
+
+  editarGasto(m: any) {
+    this.editandoGasto = m.id;
+    this.borrador = { description: m.description, amount: m.amount, category: m.category };
+  }
+
+  async guardarGasto(m: any) {
+    this.busyId = m.id;
+    try {
+      await firstValueFrom(this.http.patch(`${API}/expenses/${m.id}`, {
+        description: this.borrador.description,
+        amount: Number(this.borrador.amount),
+        category: this.borrador.category
+      }));
+      this.editandoGasto = null;
+      await this.load();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
+  // ---- Gastos fijos ----
+
+  async loadFijos() {
+    try {
+      this.fijos = await firstValueFrom(this.http.get<any[]>(`${API}/fixed-expenses`));
+    } catch {
+      this.fijos = [];
+    }
+  }
+
+  nuevoFijo() {
+    this.agregandoFijo = true;
+    this.editandoFijo = null;
+    this.borradorFijo = { label: '', amount: null, category: 'cuentas', dueDay: null };
+  }
+
+  editarFijo(f: any) {
+    this.editandoFijo = f.id;
+    this.agregandoFijo = false;
+    this.borradorFijo = { label: f.label, amount: f.amount, category: f.category, dueDay: f.dueDay };
+  }
+
+  /** El backend espera dueDay como número o null, nunca como texto vacío. */
+  private cuerpoFijo() {
+    const dia = Number(this.borradorFijo.dueDay);
+    return {
+      label: this.borradorFijo.label,
+      amount: Number(this.borradorFijo.amount),
+      category: this.borradorFijo.category,
+      dueDay: Number.isInteger(dia) && dia >= 1 && dia <= 31 ? dia : null
+    };
+  }
+
+  async crearFijo() {
+    await firstValueFrom(this.http.post(`${API}/fixed-expenses`, this.cuerpoFijo()));
+    this.agregandoFijo = false;
+    await this.refrescarFijos();
+  }
+
+  async guardarFijo(f: any) {
+    this.busyId = f.id;
+    try {
+      await firstValueFrom(this.http.patch(`${API}/fixed-expenses/${f.id}`, this.cuerpoFijo()));
+      this.editandoFijo = null;
+      await this.refrescarFijos();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
+  async borrarFijo(f: any) {
+    this.busyId = f.id;
+    try {
+      await firstValueFrom(this.http.delete(`${API}/fixed-expenses/${f.id}`));
+      await this.refrescarFijos();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
+  /** Los fijos entran en el saldo disponible: hay que recargar el resumen. */
+  private async refrescarFijos() {
+    await this.loadFijos();
+    await this.load();
   }
 
   /** Quita un gasto mal registrado y devuelve el monto al saldo. */
@@ -397,6 +581,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.gmailMsg = 'Gmail desconectado.';
     this.loadGmailStatus();
     this.loadPending();
+    this.loadFijos();
   }
 
   async copyIngest() {

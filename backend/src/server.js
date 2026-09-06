@@ -4,6 +4,7 @@ import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { ZodError } from 'zod';
 
 import authRoutes from './routes/auth.routes.js';
 import onboardingRoutes from './routes/onboarding.routes.js';
@@ -13,6 +14,7 @@ import cardRoutes from './routes/cards.routes.js';
 import bankRoutes from './routes/bank.routes.js';
 import gmailRoutes from './routes/gmail.routes.js';
 import pendingRoutes from './routes/pending.routes.js';
+import fixedExpenseRoutes from './routes/fixed-expenses.routes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -62,8 +64,18 @@ app.use('/api/cards', cardRoutes);
 app.use('/api/bank', bankRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/pending', pendingRoutes);
+app.use('/api/fixed-expenses', fixedExpenseRoutes);
 
 app.use((err, _req, res, _next) => {
+  // Un dato mal formado es culpa de la petición, no del servidor: sin esto
+  // toda validación de Zod se reportaba como 500 y el cliente no podía
+  // distinguir "te equivocaste" de "me caí".
+  if (err instanceof ZodError) {
+    return res.status(400).json({
+      error: 'Datos inválidos',
+      detalles: err.errors.map(e => ({ campo: e.path.join('.'), mensaje: e.message }))
+    });
+  }
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || 'Error interno' });
 });
