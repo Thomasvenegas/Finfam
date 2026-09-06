@@ -1,0 +1,41 @@
+# Revisa los correos bancarios de todas las cuentas conectadas.
+#
+# El plan free de Render duerme el servidor tras 15 min sin tráfico, así que no
+# puede programarse a sí mismo: este cron externo lo despierta y dispara la
+# revisión. Los movimientos detectados quedan pendientes de confirmación en la
+# app, no se registran solos.
+name: Revisar correos del banco
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # cada 10 minutos
+  workflow_dispatch:          # permite dispararlo a mano desde la pestaña Actions
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar a sync-all
+        env:
+          BACKEND_URL: https://finfam-backend-nwh2.onrender.com
+          INGEST_SECRET: ${{ secrets.EMAIL_INGEST_SECRET }}
+        run: |
+          if [ -z "$INGEST_SECRET" ]; then
+            echo "Falta el secreto EMAIL_INGEST_SECRET en el repositorio."
+            exit 1
+          fi
+
+          # El primer intento puede tardar ~1 min si Render tenía el servicio dormido.
+          codigo=$(curl -s -o respuesta.json -w '%{http_code}' \
+            -X POST "$BACKEND_URL/api/gmail/sync-all" \
+            -H "x-ingest-key: $INGEST_SECRET" \
+            --max-time 180)
+
+          echo "HTTP $codigo"
+          cat respuesta.json || true
+          echo
+
+          if [ "$codigo" != "200" ]; then
+            echo "La revisión falló."
+            exit 1
+          fi
