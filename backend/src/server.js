@@ -15,6 +15,7 @@ import bankRoutes from './routes/bank.routes.js';
 import gmailRoutes from './routes/gmail.routes.js';
 import pendingRoutes from './routes/pending.routes.js';
 import fixedExpenseRoutes from './routes/fixed-expenses.routes.js';
+import incomeRoutes from './routes/incomes.routes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -65,6 +66,7 @@ app.use('/api/bank', bankRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/pending', pendingRoutes);
 app.use('/api/fixed-expenses', fixedExpenseRoutes);
+app.use('/api/incomes', incomeRoutes);
 
 app.use((err, _req, res, _next) => {
   // Un dato mal formado es culpa de la petición, no del servidor: sin esto

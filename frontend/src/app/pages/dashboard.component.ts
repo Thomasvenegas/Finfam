@@ -124,6 +124,75 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
       </div>
     </div>
 
+    <!-- Ingresos: los que se repiten cuentan todos los meses; los puntuales
+         (un bono, una devolución) solo en el suyo -->
+    <div class="card" style="margin-top:16px">
+      <h3>Ingresos del mes</h3>
+      <p class="muted" style="margin-top:0">
+        Total: <strong>{{ s.totalIncome | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong>
+      </p>
+
+      <div *ngIf="ingresosFallaron" class="error">No se pudieron cargar tus ingresos. Recarga la página.</div>
+      <div *ngIf="!ingresos.length && !ingresosFallaron" class="muted">Todavía no tienes ingresos registrados.</div>
+
+      <div *ngFor="let i of ingresos" style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div *ngIf="editandoIngreso !== i.id" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <span style="flex:1;min-width:0">
+            {{ i.label }}
+            <span class="muted">· {{ i.recurring ? 'todos los meses' : 'solo este mes' }}</span>
+          </span>
+          <strong style="color:var(--green);white-space:nowrap">
+            +{{ i.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
+          </strong>
+          <button class="ghost" (click)="editarIngreso(i)" title="Editar"
+                  style="padding:2px 8px;line-height:1.4">✎</button>
+          <button class="ghost" (click)="borrarIngreso(i)" [disabled]="busyId === i.id" title="Quitar"
+                  style="padding:2px 8px;line-height:1.4">✕</button>
+        </div>
+
+        <div *ngIf="editandoIngreso === i.id" style="display:grid;gap:8px;padding:4px 0">
+          <input [(ngModel)]="borradorIngreso.label" placeholder="Nombre (ej. Sueldo)">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="number" [(ngModel)]="borradorIngreso.amount" placeholder="Monto" style="flex:1;min-width:120px">
+            <label style="margin:0;display:flex;gap:6px;align-items:center;white-space:nowrap">
+              <input type="checkbox" [(ngModel)]="borradorIngreso.recurring" style="width:auto">
+              Se repite todos los meses
+            </label>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button (click)="guardarIngreso(i)" [disabled]="busyId === i.id || !borradorIngreso.label || !borradorIngreso.amount">
+              Guardar
+            </button>
+            <button class="ghost" (click)="editandoIngreso = null">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="!agregandoIngreso" style="margin-top:12px">
+        <button class="ghost" (click)="nuevoIngreso()">+ Agregar ingreso</button>
+      </div>
+
+      <div *ngIf="agregandoIngreso" style="display:grid;gap:8px;margin-top:12px">
+        <input [(ngModel)]="borradorIngreso.label" placeholder="Nombre (ej. Bono, Arriendo)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" [(ngModel)]="borradorIngreso.amount" placeholder="Monto" style="flex:1;min-width:120px">
+          <label style="margin:0;display:flex;gap:6px;align-items:center;white-space:nowrap">
+            <input type="checkbox" [(ngModel)]="borradorIngreso.recurring" style="width:auto">
+            Se repite todos los meses
+          </label>
+        </div>
+        <p class="muted" style="margin:0">
+          {{ borradorIngreso.recurring
+             ? 'Contará en el saldo de todos los meses, como un sueldo.'
+             : 'Contará solo en el mes actual, como un bono o una devolución.' }}
+        </p>
+        <div style="display:flex;gap:8px">
+          <button (click)="crearIngreso()" [disabled]="!borradorIngreso.label || !borradorIngreso.amount">Agregar</button>
+          <button class="ghost" (click)="agregandoIngreso = false">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Gastos fijos: se descuentan todos los meses, así que tienen que
          poder corregirse y no quedar congelados desde el onboarding -->
     <div class="card" style="margin-top:16px">
@@ -133,7 +202,8 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
         <strong>{{ s.totalFixed | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong>
       </p>
 
-      <div *ngIf="!fijos.length" class="muted">Todavía no tienes gastos fijos registrados.</div>
+      <div *ngIf="fijosFallaron" class="error">No se pudieron cargar tus gastos fijos. Recarga la página.</div>
+      <div *ngIf="!fijos.length && !fijosFallaron" class="muted">Todavía no tienes gastos fijos registrados.</div>
 
       <div *ngFor="let f of fijos" style="padding:8px 0;border-bottom:1px solid var(--line)">
         <div *ngIf="editandoFijo !== f.id" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
@@ -301,6 +371,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   editandoFijo: string | null = null;
   agregandoFijo = false;
   borradorFijo: any = {};
+  ingresos: any[] = [];
+  editandoIngreso: string | null = null;
+  agregandoIngreso = false;
+  borradorIngreso: any = {};
+  fijosFallaron = false;
+  ingresosFallaron = false;
 
   /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
   get movements(): any[] {
@@ -328,6 +404,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadGmailStatus();
     this.loadPending();
     this.loadFijos();
+    this.loadIngresos();
     this.readGmailReturn();
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
@@ -383,6 +460,72 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
   }
 
+  // ---- Ingresos ----
+
+  async loadIngresos() {
+    try {
+      this.ingresos = await firstValueFrom(this.http.get<any[]>(`${API}/incomes`));
+      this.ingresosFallaron = false;
+    } catch {
+      // Vaciar la lista diría "no tienes ingresos", que es una afirmación
+      // distinta —y peligrosa en una app de plata— a "no pude leerlos".
+      this.ingresosFallaron = true;
+    }
+  }
+
+  nuevoIngreso() {
+    this.agregandoIngreso = true;
+    this.editandoIngreso = null;
+    this.borradorIngreso = { label: '', amount: null, recurring: true };
+  }
+
+  editarIngreso(i: any) {
+    this.editandoIngreso = i.id;
+    this.agregandoIngreso = false;
+    this.borradorIngreso = { label: i.label, amount: i.amount, recurring: i.recurring };
+  }
+
+  private cuerpoIngreso() {
+    return {
+      label: this.borradorIngreso.label,
+      amount: Number(this.borradorIngreso.amount),
+      recurring: !!this.borradorIngreso.recurring
+    };
+  }
+
+  async crearIngreso() {
+    await firstValueFrom(this.http.post(`${API}/incomes`, this.cuerpoIngreso()));
+    this.agregandoIngreso = false;
+    await this.refrescarIngresos();
+  }
+
+  async guardarIngreso(i: any) {
+    this.busyId = i.id;
+    try {
+      await firstValueFrom(this.http.patch(`${API}/incomes/${i.id}`, this.cuerpoIngreso()));
+      this.editandoIngreso = null;
+      await this.refrescarIngresos();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
+  async borrarIngreso(i: any) {
+    this.busyId = i.id;
+    try {
+      await firstValueFrom(this.http.delete(`${API}/incomes/${i.id}`));
+      await this.refrescarIngresos();
+    } finally {
+      this.busyId = null;
+    }
+  }
+
+  /** Los ingresos entran en el saldo disponible: hay que recargar el resumen. */
+  private async refrescarIngresos() {
+    await this.loadIngresos();
+    await this.load();
+  }
+
   // ---- Corregir un gasto ya registrado ----
 
   editarGasto(m: any) {
@@ -410,8 +553,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
   async loadFijos() {
     try {
       this.fijos = await firstValueFrom(this.http.get<any[]>(`${API}/fixed-expenses`));
+      this.fijosFallaron = false;
     } catch {
-      this.fijos = [];
+      this.fijosFallaron = true;
     }
   }
 
@@ -582,6 +726,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadGmailStatus();
     this.loadPending();
     this.loadFijos();
+    this.loadIngresos();
   }
 
   async copyIngest() {
