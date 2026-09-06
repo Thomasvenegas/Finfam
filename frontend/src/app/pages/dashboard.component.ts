@@ -75,9 +75,14 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
       <!-- Últimos movimientos + banco -->
       <div class="card">
         <h3>Últimos movimientos</h3>
-        <div *ngIf="!movements.length" class="muted">
-          Aún no hay movimientos este mes. Registra un gasto o conecta tu banco.
+        <div *ngIf="!movements.length && !cargandoMas" class="muted">
+          Aún no hay movimientos. Registra un gasto o conecta tu banco.
         </div>
+
+        <!-- Alto acotado con scroll propio: al llegar al final se pide la
+             página siguiente, así se puede ir hacia atrás en el tiempo. -->
+        <div #listaMovs (scroll)="alScrollear(listaMovs)"
+             style="max-height:340px;overflow-y:auto;overscroll-behavior:contain">
         <div *ngFor="let m of movements" style="padding:6px 0;border-bottom:1px solid var(--line)">
 
           <!-- Lectura -->
@@ -117,6 +122,13 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
             </div>
           </div>
         </div>
+        </div>
+
+        <p *ngIf="cargandoMas" class="muted" style="margin:8px 0 0">Cargando más…</p>
+        <p *ngIf="!hayMasMovs && movements.length" class="muted" style="margin:8px 0 0">
+          No hay más movimientos.
+        </p>
+
         <button class="ghost" style="margin-top:14px" (click)="connectBank()">
           Conectar Banco de Chile (y otros)
         </button>
@@ -377,11 +389,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   borradorIngreso: any = {};
   fijosFallaron = false;
   ingresosFallaron = false;
+  movimientos: any[] = [];
+  hayMasMovs = true;
+  cargandoMas = false;
+  private readonly PAGINA = 20;
 
-  /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
+  /** Historial paginado; cae al resumen si /movements no está disponible. */
   get movements(): any[] {
-    if (this.s?.lastMovements) return this.s.lastMovements;
-    return (this.s?.lastExpenses || []).map((e: any) => ({ ...e, type: 'expense' }));
+    if (this.movimientos.length || !this.s) return this.movimientos;
+    return this.s.lastMovements || [];
   }
   newDesc = ''; newAmount: number | null = null; newCategory = 'supermercado';
   categories = ['supermercado', 'comida', 'transporte', 'salud', 'cuentas', 'ocio', 'otros'];
@@ -405,12 +421,19 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadPending();
     this.loadFijos();
     this.loadIngresos();
+    this.recargarMovimientos();
     this.readGmailReturn();
     this.socket.connect();
     // Tiempo real: gasto nuevo (manual, webhook Fintoc o correo) => refrescar
-    this.sub = this.socket.expenseCreated$.subscribe(() => this.load());
+    this.sub = this.socket.expenseCreated$.subscribe(() => {
+      this.load();
+      this.recargarMovimientos();
+    });
     // Un abono avisado por correo también mueve el saldo: refrescar igual.
-    this.incomeSub = this.socket.incomeCreated$.subscribe(() => this.load());
+    this.incomeSub = this.socket.incomeCreated$.subscribe(() => {
+      this.load();
+      this.recargarMovimientos();
+    });
     // Un correo recién detectado aparece en la bandeja sin recargar la página
     this.pendingSub = this.socket.pendingCreated$.subscribe(() => this.loadPending());
   }
@@ -458,6 +481,38 @@ export class DashboardComponent implements OnInit, OnDestroy {
     } catch {
       this.ingest = null;
     }
+  }
+
+  // ---- Historial de movimientos ----
+
+  /** Vuelve a la primera página: tras crear, editar o borrar algo. */
+  async recargarMovimientos() {
+    this.movimientos = [];
+    this.hayMasMovs = true;
+    await this.cargarMasMovimientos();
+  }
+
+  async cargarMasMovimientos() {
+    if (this.cargandoMas || !this.hayMasMovs) return;
+    this.cargandoMas = true;
+    try {
+      const r = await firstValueFrom(this.http.get<any>(
+        `${API}/movements?limit=${this.PAGINA}&offset=${this.movimientos.length}`
+      ));
+      this.movimientos = [...this.movimientos, ...r.items];
+      this.hayMasMovs = r.hayMas;
+    } catch {
+      // Sin historial no se corta la página: el resumen del mes sigue sirviendo.
+      this.hayMasMovs = false;
+    } finally {
+      this.cargandoMas = false;
+    }
+  }
+
+  /** Pide la página siguiente al acercarse al final de la lista. */
+  alScrollear(el: HTMLElement) {
+    const faltan = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (faltan < 120) this.cargarMasMovimientos();
   }
 
   // ---- Ingresos ----
@@ -524,6 +579,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private async refrescarIngresos() {
     await this.loadIngresos();
     await this.load();
+    await this.recargarMovimientos();
   }
 
   // ---- Corregir un gasto ya registrado ----
@@ -543,6 +599,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       }));
       this.editandoGasto = null;
       await this.load();
+      await this.recargarMovimientos();
     } finally {
       this.busyId = null;
     }
@@ -621,6 +678,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     try {
       await firstValueFrom(this.http.delete(`${API}/expenses/${m.id}`));
       await this.load();
+      await this.recargarMovimientos();
     } finally {
       this.busyId = null;
     }
@@ -727,6 +785,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadPending();
     this.loadFijos();
     this.loadIngresos();
+    this.recargarMovimientos();
   }
 
   async copyIngest() {
@@ -745,6 +804,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.newDesc = ''; this.newAmount = null;
     // el socket dispara load(), pero refrescamos por si acaso
     this.load();
+    this.recargarMovimientos();
   }
 
   /** Abre el widget de Fintoc: el usuario elige Banco de Chile (u otro) y
