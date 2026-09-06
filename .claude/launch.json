@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "finfam-frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "start", "--", "--configuration", "production"],
-      "port": 4200
+      "name": "finfam-pwa",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "frontend/dist/finfam/browser", "-p", "4300", "-c-1"],
+      "port": 4300
     }
   ]
 }

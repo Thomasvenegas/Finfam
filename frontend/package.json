@@ -14,6 +14,7 @@
     "@angular/platform-browser": "^17.3.0",
     "@angular/platform-browser-dynamic": "^17.3.0",
     "@angular/router": "^17.3.0",
+    "@angular/service-worker": "^17.3.0",
     "chart.js": "^4.4.3",
     "ng2-charts": "^6.0.1",
     "rxjs": "~7.8.0",

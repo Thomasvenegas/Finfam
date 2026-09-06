@@ -19,6 +19,15 @@ Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
   standalone: true,
   imports: [CommonModule, FormsModule, BaseChartDirective],
   template: `
+  <div class="container" *ngIf="!s && sinConexion">
+    <div class="card" style="text-align:center">
+      <h3>Sin conexión</h3>
+      <p class="muted" style="margin:0">
+        FinFam necesita internet para mostrarte el saldo del mes. Se actualizará solo al volver.
+      </p>
+    </div>
+  </div>
+
   <div class="container" *ngIf="s">
 
     <!-- Firma: saldo disponible en vivo -->
@@ -196,6 +205,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   syncing = false;
   pending: any[] = [];
   busyId: string | null = null;
+  sinConexion = false;
 
   /** Gastos y abonos del mes mezclados; cae a solo gastos si el backend es viejo. */
   get movements(): any[] {
@@ -238,7 +248,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   async load() {
-    this.s = await firstValueFrom(this.http.get<any>(`${API}/dashboard/summary`));
+    try {
+      this.s = await firstValueFrom(this.http.get<any>(`${API}/dashboard/summary`));
+      this.sinConexion = false;
+    } catch {
+      // Instalada como app puede abrirse sin red: mejor decirlo que dejar la
+      // pantalla en blanco esperando datos que no van a llegar. No se relanza
+      // para no dejar promesas rechazadas sueltas en cada llamador.
+      this.sinConexion = true;
+    }
     const days = this.s.cumulative.map((_: number, i: number) => i + 1);
     this.lineData = {
       labels: days,

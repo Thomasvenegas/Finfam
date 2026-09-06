@@ -5,13 +5,23 @@
   <title>FinFam — Tu mes de un vistazo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
   <!-- Google Identity Services para el botón "Continuar con Google" -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async="" defer=""></script>
   <!-- Widget de Fintoc para vincular Banco de Chile y otros -->
-  <script src="https://js.fintoc.com/v1/" async defer></script>
+  <script src="https://js.fintoc.com/v1/" async="" defer=""></script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <!-- iOS no lee los íconos del manifest para la pantalla de inicio -->
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FinFam">
+  <meta name="description" content="Ingresos, gastos y saldo del mes en tiempo real.">
+  <meta name="theme-color" content="#0b0b16">
 </head>
 <body>
   <app-root></app-root>
+  <noscript>Necesitas habilitar JavaScript para usar FinFam.</noscript>
 </body>
 </html>
