@@ -13,12 +13,12 @@ declare const google: any;
   template: `
   <div style="min-height:100vh;display:grid;place-items:center">
     <div class="card" style="width:min(420px,92vw)">
-      <h1 style="color:var(--copper)">FinFam</h1>
+      <h1 style="color:var(--magenta);text-shadow:0 0 24px rgba(255,46,151,.5)">FinFam</h1>
       <p class="muted">Tu mes, de un vistazo. Ingresos, gastos y saldo en tiempo real.</p>
 
       <div style="display:flex;gap:8px;margin:16px 0">
-        <button class="ghost" [style.borderColor]="mode==='login' ? 'var(--copper)' : ''" (click)="mode='login'">Iniciar sesión</button>
-        <button class="ghost" [style.borderColor]="mode==='register' ? 'var(--copper)' : ''" (click)="mode='register'">Crear cuenta</button>
+        <button class="ghost" [style.borderColor]="mode==='login' ? 'var(--neon)' : ''" (click)="mode='login'">Iniciar sesión</button>
+        <button class="ghost" [style.borderColor]="mode==='register' ? 'var(--neon)' : ''" (click)="mode='register'">Crear cuenta</button>
       </div>
 
       <div *ngIf="mode==='register'">

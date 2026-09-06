@@ -4,11 +4,15 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, Subscription } from 'rxjs';
 import { BaseChartDirective } from 'ng2-charts';
-import { ChartConfiguration } from 'chart.js';
+import { Chart, ChartConfiguration } from 'chart.js';
 import { API } from '../core/auth.service';
 import { SocketService } from '../core/socket.service';
 
 declare const Fintoc: any;
+
+// Chart.js asume fondo claro: sin esto, ejes y leyendas quedan invisibles.
+Chart.defaults.color = '#9d9bd0';
+Chart.defaults.borderColor = 'rgba(122,122,255,.16)';
 
 @Component({
   selector: 'app-dashboard',
@@ -158,7 +162,7 @@ declare const Fintoc: any;
         </summary>
         <div style="margin-top:10px">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <code style="flex:1;min-width:260px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;word-break:break-all">{{ ingest?.address }}</code>
+            <code style="flex:1;min-width:260px;background:var(--card-hi);border:1px solid var(--line);border-radius:8px;padding:10px 12px;word-break:break-all">{{ ingest?.address }}</code>
             <button class="ghost" (click)="copyIngest()">{{ copied ? '¡Copiada!' : 'Copiar' }}</button>
           </div>
           <ol class="muted" style="padding-left:18px;line-height:1.7">
@@ -227,15 +231,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.lineData = {
       labels: days,
       datasets: [
-        { label: 'Gasto acumulado', data: this.s.cumulative, borderColor: '#b4653f', backgroundColor: 'rgba(180,101,63,.12)', fill: true, tension: .25, pointRadius: 0 },
-        { label: 'Ingreso del mes', data: days.map(() => this.s.incomeLine), borderColor: '#1f6f50', borderDash: [6, 6], pointRadius: 0 }
+        { label: 'Gasto acumulado', data: this.s.cumulative, borderColor: '#ff2e97', backgroundColor: 'rgba(255,46,151,.16)', fill: true, tension: .25, pointRadius: 0 },
+        { label: 'Ingreso del mes', data: days.map(() => this.s.incomeLine), borderColor: '#3dffb0', borderDash: [6, 6], pointRadius: 0 }
       ]
     };
     this.donutData = {
       labels: Object.keys(this.s.byCategory),
       datasets: [{
         data: Object.values(this.s.byCategory) as number[],
-        backgroundColor: ['#b4653f', '#1f6f50', '#5b6675', '#d8a47f', '#8fb3a3', '#b03a34', '#1b2431']
+        backgroundColor: ['#ff2e97', '#00e5ff', '#3dffb0', '#a45cff', '#ffd93d', '#ff8a3d', '#7a7aff'],
+        borderColor: '#14142b',
+        borderWidth: 2
       }]
     };
   }

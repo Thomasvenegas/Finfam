@@ -19,7 +19,7 @@ import { API } from '../core/auth.service';
 
     <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
       <div class="card" *ngFor="let c of cards"
-           style="background:linear-gradient(135deg,var(--ink),#2c3a4f);color:#fff">
+           style="background:linear-gradient(135deg,#2a0b4d,#0b2a4d 55%,#0b1030);color:#fff;border-color:var(--violet);box-shadow:0 0 24px rgba(164,92,255,.25)">
         <p style="margin:0;opacity:.8">{{ c.bank }}</p>
         <h3 style="letter-spacing:2px;margin:12px 0">•••• •••• •••• {{ c.last4 }}</h3>
         <div style="display:flex;justify-content:space-between;align-items:center">

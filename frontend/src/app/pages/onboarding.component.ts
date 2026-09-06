@@ -16,15 +16,15 @@ interface Item { label: string; amount: number | null; category?: string; }
   <div class="container" style="max-width:640px">
     <p class="muted">Paso {{ step }} de 4</p>
     <div style="height:6px;background:var(--line);border-radius:3px;margin-bottom:24px">
-      <div [style.width.%]="step*25" style="height:6px;background:var(--copper);border-radius:3px;transition:width .3s"></div>
+      <div [style.width.%]="step*25" style="height:6px;background:var(--neon);border-radius:3px;transition:width .3s"></div>
     </div>
 
     <!-- Paso 1: hogar -->
     <div class="card" *ngIf="step===1">
       <h2>¿Para quién es este presupuesto?</h2>
       <div style="display:flex;gap:12px;margin:16px 0">
-        <button class="ghost" [style.borderColor]="householdType==='individual' ? 'var(--copper)' : ''" (click)="householdType='individual'">Solo para mí</button>
-        <button class="ghost" [style.borderColor]="householdType==='familia' ? 'var(--copper)' : ''" (click)="householdType='familia'">Mi familia</button>
+        <button class="ghost" [style.borderColor]="householdType==='individual' ? 'var(--neon)' : ''" (click)="householdType='individual'">Solo para mí</button>
+        <button class="ghost" [style.borderColor]="householdType==='familia' ? 'var(--neon)' : ''" (click)="householdType='familia'">Mi familia</button>
       </div>
       <label>¿Cuántos hijos tienes?</label>
       <input type="number" min="0" [(ngModel)]="childrenCount">
