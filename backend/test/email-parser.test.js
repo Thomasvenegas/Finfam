@@ -279,4 +279,26 @@ test('un abono real sobrevive aunque el pie traiga publicidad', () => {
   });
   assert.equal(r.type, 'income');
   assert.equal(r.amount, 80000);
+  // El pie publicitario no debe robarse la descripción del movimiento.
+  assert.equal(r.merchant, 'MARIA SOTO');
+});
+
+test('el pie del correo no se roba la descripción', () => {
+  // "en nuestra app" está en otra frase: no es el comercio del cargo.
+  const r = parseBankEmail({
+    from: 'enviodigital@bancochile.cl',
+    subject: 'Compra con Tarjeta',
+    text: 'Se realizó una compra por $9.900 en STARBUCKS. Revisa tus movimientos en nuestra app.'
+  });
+  assert.equal(r.merchant, 'STARBUCKS');
+});
+
+test('un abono usa el remitente del dinero, no un lugar mencionado después', () => {
+  const r = parseBankEmail({
+    from: 'no-responder@bancoestado.cl',
+    subject: 'Abono en tu cuenta',
+    text: 'Abono por $45.000 de PEDRO GONZALEZ en tu cuenta corriente.'
+  });
+  assert.equal(r.type, 'income');
+  assert.equal(r.merchant, 'PEDRO GONZALEZ');
 });

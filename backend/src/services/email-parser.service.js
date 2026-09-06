@@ -114,26 +114,54 @@ function extractAmount(text, anchorRe = OUTFLOW) {
   return (after[0] || candidates[0]).value;
 }
 
-/** Extrae el nombre del comercio o destinatario. */
-function extractMerchant(text, subject) {
-  // Frases que cierran el nombre del comercio: fecha, medio de pago, monto...
-  const END = String.raw`(?=\s+(?:el|los)\s+d[ií]a\b|\s+el\s+\d|\s+por\s+(?:\$|CLP)|\s+con\s+(?:tu\s+|su\s+|la\s+|el\s+)?(?:tarjeta|cuenta)|\s+a\s+las\s+\d|[.,;\n]|$)`;
+/**
+ * Recorta la frase que contiene el monto. El comercio se nombra junto al
+ * cargo, así que mirar el correo completo hace que frases del pie
+ * ("Conoce más beneficios en nuestra app") se roben la descripción.
+ */
+function sentenceWithAmount(text) {
+  const m = text.match(/(?:\$|CLP\$?)\s*\d[\d.,]*/);
+  if (!m) return null;
+  const inicio = Math.max(
+    text.lastIndexOf('.', m.index) + 1,
+    text.lastIndexOf('\n', m.index) + 1
+  );
+  let fin = text.length;
+  for (const sep of ['.', '\n']) {
+    const i = text.indexOf(sep, m.index);
+    if (i !== -1 && i < fin) fin = i;
+  }
+  return text.slice(inicio, fin).trim();
+}
 
-  const patterns = [
-    // "compra por $12.345 en LIDER EL BOSQUE el 05/09/2026"
-    new RegExp(String.raw`\ben\s+(?:el\s+comercio\s+)?["']?(.{2,60}?)["']?` + END, 'i'),
-    // "transferencia enviada a JUAN PEREZ"
-    new RegExp(String.raw`\b(?:a|hacia)\s+(?:favor de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END),
-    // "abono de MARIA SOTO" / "transferencia de JUAN"
-    new RegExp(String.raw`\bde\s+(?:parte de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END),
-    // "Comercio: LIDER"
-    /\bcomercio\s*:\s*([^\n.,;]{2,60})/i,
-    // "en el establecimiento LIDER"
-    /\bestablecimiento\s+([^\n.,;]{2,60})/i
-  ];
+/** Extrae el nombre del comercio o destinatario. */
+function extractMerchant(text, subject, type = 'expense') {
+  // Frases que cierran el nombre del comercio: fecha, medio de pago, monto...
+  const END = String.raw`(?=\s+(?:el|los)\s+d[ií]a\b|\s+el\s+\d|\s+por\s+(?:\$|CLP)|\s+(?:con|en|a|de)\s+(?:tu|su|la|el|nuestr[ao])\s+(?:tarjeta|cuenta|app|banco|sitio)|\s+con\s+(?:tarjeta|cuenta)|\s+a\s+las\s+\d|[.,;\n]|$)`;
+
+  // "compra por $12.345 en LIDER EL BOSQUE el 05/09/2026"
+  const enComercio = new RegExp(String.raw`\ben\s+(?:el\s+comercio\s+)?["']?(.{2,60}?)["']?` + END, 'i');
+  // "transferencia enviada a JUAN PEREZ"
+  const aDestino = new RegExp(String.raw`\b(?:a|hacia)\s+(?:favor de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END);
+  // "abono de MARIA SOTO" / "transferencia de JUAN"
+  const deOrigen = new RegExp(String.raw`\bde\s+(?:parte de\s+)?["']?([A-ZÁÉÍÓÚÑ].{1,59}?)["']?` + END);
+
+  // En un ingreso el origen viene como "de FULANO"; en un gasto, el comercio
+  // como "en LUGAR". Probarlos en el orden equivocado deja ganar al que no es.
+  const patterns = type === 'income'
+    ? [deOrigen, enComercio, aDestino]
+    : [enComercio, aDestino, deOrigen];
+
+  patterns.push(
+    /\bcomercio\s*:\s*([^\n.,;]{2,60})/i,     // "Comercio: LIDER"
+    /\bestablecimiento\s+([^\n.,;]{2,60})/i    // "en el establecimiento LIDER"
+  );
+
+  // Primero la frase del monto; si ahí no aparece, se mira el correo completo.
+  const ambitos = [sentenceWithAmount(text), text].filter(Boolean);
 
   for (const re of patterns) {
-    const m = text.match(re);
+    const m = ambitos.map(a => a.match(re)).find(Boolean);
     const merchant = m?.[1]?.trim().replace(/\s+/g, ' ');
     // Descarta capturas que en realidad son fragmentos de la frase.
     if (merchant && merchant.length >= 2 &&
@@ -195,7 +223,7 @@ export function parseBankEmail({ from = '', subject = '', text = '', receivedAt 
   return {
     type,
     amount,
-    merchant: extractMerchant(body, subject),
+    merchant: extractMerchant(body, subject, type),
     date: extractDate(body, receivedAt),
     bank: detectBank(from)
   };
