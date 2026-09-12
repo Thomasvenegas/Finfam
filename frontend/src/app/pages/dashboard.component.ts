@@ -20,6 +20,15 @@ function tintarChartJs() {
   Chart.defaults.borderColor = css.getPropertyValue('--line').trim();
 }
 
+/** Mezcla dos colores #rrggbb; con cualquier otro formato devuelve el primero. */
+function mezclar(a: string, b: string, t: number): string {
+  const rgb = (h: string) =>
+    /^#[0-9a-f]{6}$/i.test(h) ? [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)) : null;
+  const x = rgb(a), y = rgb(b);
+  if (!x || !y) return a;
+  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -550,6 +559,25 @@ export class DashboardComponent implements OnInit, OnDestroy {
     public tema: ThemeService
   ) {}
 
+  /**
+   * Un color por categoría. Con 18 categorías no alcanzan los 7 del tema, y
+   * Chart.js pinta las tajadas sobrantes con un gris casi transparente,
+   * invisible sobre fondo oscuro. Se agregan variantes más claras y más
+   * oscuras de los mismos colores, así la dona sigue la paleta elegida.
+   */
+  private paletaCategorias(n: number): string[] {
+    const base = ['--magenta', '--neon', '--green', '--violet', '--yellow', '--red', '--ink-soft']
+      .map(v => this.tema.color(v));
+    const tinta = this.tema.color('--ink');
+    const fondo = this.tema.color('--card');
+    const variantes = [
+      ...base,
+      ...base.map(c => mezclar(c, tinta, 0.45)),
+      ...base.map(c => mezclar(c, fondo, 0.4))
+    ];
+    return Array.from({ length: Math.max(n, 1) }, (_, i) => variantes[i % variantes.length]);
+  }
+
   /** Chart.js necesita el color con alfa para el relleno bajo la curva. */
   private conAlfa(color: string, alfa: number): string {
     return `color-mix(in srgb, ${color} ${Math.round(alfa * 100)}%, transparent)`;
@@ -635,11 +663,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       labels: Object.keys(this.s.byCategory),
       datasets: [{
         data: Object.values(this.s.byCategory) as number[],
-        backgroundColor: [
-          this.tema.color('--magenta'), this.tema.color('--neon'), this.tema.color('--green'),
-          this.tema.color('--violet'), this.tema.color('--yellow'), this.tema.color('--red'),
-          this.tema.color('--ink-soft')
-        ],
+        backgroundColor: this.paletaCategorias(Object.keys(this.s.byCategory).length),
         borderColor: this.tema.color('--card'),
         borderWidth: 2
       }]

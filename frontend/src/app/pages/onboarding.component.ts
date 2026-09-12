@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { API, AuthService } from '../core/auth.service';
+import { CATEGORIAS } from '../core/categorias';
 
 interface Item { label: string; amount: number | null; category?: string; }
 
@@ -51,12 +52,11 @@ interface Item { label: string; amount: number | null; category?: string; }
       <div *ngFor="let f of fixedExpenses; let idx = index" style="display:flex;gap:8px;margin-bottom:8px">
         <input [(ngModel)]="f.label" placeholder="Dividendo hipotecario">
         <input type="number" [(ngModel)]="f.amount" placeholder="Monto" style="max-width:140px">
+        <!-- La misma lista que el resto de la app. La propia tenía "educacion"
+             sin tilde, distinta de "educación": esos gastos quedaban fuera de
+             filtros y presupuestos, y al editarlos cambiaban de categoría. -->
         <select [(ngModel)]="f.category" style="max-width:150px">
-          <option value="vivienda">Vivienda</option>
-          <option value="educacion">Educación</option>
-          <option value="cuentas">Cuentas</option>
-          <option value="salud">Salud</option>
-          <option value="otros">Otros</option>
+          <option *ngFor="let c of categorias" [value]="c">{{ c }}</option>
         </select>
         <button class="ghost" (click)="fixedExpenses.splice(idx,1)">✕</button>
       </div>
@@ -93,6 +93,7 @@ export class OnboardingComponent {
   monthlySalary: number | null = null;
   extraIncomes: Item[] = [];
   fixedExpenses: Item[] = [{ label: '', amount: null, category: 'vivienda' }];
+  categorias = CATEGORIAS;
   busy = false; error = '';
 
   constructor(private http: HttpClient, private router: Router, private auth: AuthService) {}
