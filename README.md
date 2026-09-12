@@ -140,9 +140,13 @@ BCI, BancoEstado, Itaú y Tenpo.
 |---|---|
 | `/api/auth` | Registro, login nativo y con Google (bcrypt + JWT) |
 | `/api/onboarding` | Wizard de 4 pasos: hogar → ingresos → gastos fijos → resumen |
-| `/api/dashboard/summary` | Resumen del mes: totales, curva acumulada, dona por categoría y últimos movimientos |
+| `/api/dashboard/summary` | Resumen de un mes (`?month=AAAA-MM`): totales, curva, dona, proyección a fin de mes, comparación con el mes anterior, presupuestos y próximos pagos |
 | `/api/expenses` | Alta, edición, borrado y listado de gastos |
 | `/api/fixed-expenses` | Gastos fijos: alta, edición y borrado |
+| `/api/incomes` | Ingresos recurrentes y puntuales: alta, edición y borrado |
+| `/api/movements` | Historial paginado con búsqueda y filtros; `/export` lo entrega en CSV para Excel |
+| `/api/budgets` | Tope mensual de gasto por categoría |
+| `/api/goals` | Metas de ahorro, con aportes y retiros |
 | `/api/pending` | Bandeja de confirmación: listar, aprobar, descartar |
 | `/api/gmail` | Conectar/desconectar Gmail, estado, sincronizar (`/sync-all` para el cron) |
 | `/api/bank` | Vínculos Fintoc, webhook de movimientos y webhook de correos |
@@ -173,9 +177,7 @@ las APIs bancarias, pero el acceso es para instituciones inscritas.
 
 ## Próximos pasos sugeridos
 
-- Editar y borrar ingresos (hoy solo se pueden corregir los gastos)
+- Hogar compartido: invitar a la pareja al mismo presupuesto (cambia el modelo de datos)
+- Notificaciones push cuando llega un cargo grande o un presupuesto se pasa del 80%
+- Compras en cuotas: repartir un cargo de tarjeta en los meses que corresponde
 - Cifrar `BankLink.linkToken` en reposo, como ya se hace con el token de Gmail
-- Presupuestos por categoría con alertas ("llevas 80% de tu presupuesto de ocio")
-- Multiusuario por hogar (invitar a tu pareja al mismo presupuesto)
-- Historial de meses anteriores y comparación mes a mes
-- Notificaciones push cuando llega un cargo grande

@@ -17,6 +17,8 @@ import pendingRoutes from './routes/pending.routes.js';
 import fixedExpenseRoutes from './routes/fixed-expenses.routes.js';
 import incomeRoutes from './routes/incomes.routes.js';
 import movementRoutes from './routes/movements.routes.js';
+import budgetRoutes from './routes/budgets.routes.js';
+import goalRoutes from './routes/goals.routes.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -69,6 +71,8 @@ app.use('/api/pending', pendingRoutes);
 app.use('/api/fixed-expenses', fixedExpenseRoutes);
 app.use('/api/incomes', incomeRoutes);
 app.use('/api/movements', movementRoutes);
+app.use('/api/budgets', budgetRoutes);
+app.use('/api/goals', goalRoutes);
 
 app.use((err, _req, res, _next) => {
   // Un dato mal formado es culpa de la petición, no del servidor: sin esto

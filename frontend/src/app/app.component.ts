@@ -15,6 +15,8 @@ import { AuthService } from './core/auth.service';
         <strong style="font-family:var(--font-display);color:var(--magenta)">FinFam</strong>
         <a routerLink="/dashboard">Resumen</a>
         <a routerLink="/tarjetas">Tarjetas</a>
+        <a routerLink="/presupuestos">Presupuestos</a>
+        <a routerLink="/metas">Metas</a>
         <span style="flex:1"></span>
         <span class="muted nav-user">{{ auth.user()?.name }}</span>
         <button class="ghost" (click)="auth.logout()">Salir</button>

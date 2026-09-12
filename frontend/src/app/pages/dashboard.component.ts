@@ -2,11 +2,13 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
 import { BaseChartDirective } from 'ng2-charts';
 import { Chart, ChartConfiguration } from 'chart.js';
 import { API } from '../core/auth.service';
 import { SocketService } from '../core/socket.service';
+import { CATEGORIAS } from '../core/categorias';
 import { ThemeService } from '../core/theme.service';
 
 declare const Fintoc: any;
@@ -21,7 +23,7 @@ function tintarChartJs() {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective],
+  imports: [CommonModule, FormsModule, BaseChartDirective, RouterLink],
   template: `
   <div class="container" *ngIf="!s && sinConexion">
     <div class="card" style="text-align:center">
@@ -36,16 +38,70 @@ function tintarChartJs() {
 
     <!-- Firma: saldo disponible en vivo -->
     <div class="card" style="text-align:center;padding:32px">
-      <p class="muted" style="margin:0">Disponible este mes ({{ s.month }})</p>
+      <!-- Navegar entre meses para ver cómo cerró uno anterior -->
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px">
+        <button class="ghost" (click)="irAMes(s.previousMonth)" title="Mes anterior" style="padding:4px 14px">‹</button>
+        <strong style="min-width:150px;text-transform:capitalize">{{ nombreMes(s.month) }}</strong>
+        <button class="ghost" (click)="irAMes(s.nextMonth)" [disabled]="!s.nextMonth" title="Mes siguiente" style="padding:4px 14px">›</button>
+      </div>
+      <p class="muted" style="margin:0">{{ s.isCurrentMonth ? 'Disponible este mes' : 'Así cerró el mes' }}</p>
       <div class="saldo" [class.ok]="!s.overspent" [class.bad]="s.overspent">
         {{ s.available | currency:'CLP':'symbol-narrow':'1.0-0' }}
       </div>
-      <p *ngIf="s.overspent" class="error">Has gastado más de lo que ganas este mes.</p>
+      <p *ngIf="s.overspent" class="error">
+        {{ s.isCurrentMonth ? 'Has gastado más de lo que ganas este mes.' : 'Ese mes gastaste más de lo que ganaste.' }}
+      </p>
       <p class="muted">
         Ingresos {{ s.totalIncome | currency:'CLP':'symbol-narrow':'1.0-0' }} ·
         Fijos {{ s.totalFixed | currency:'CLP':'symbol-narrow':'1.0-0' }} ·
         Variables {{ s.totalVariable | currency:'CLP':'symbol-narrow':'1.0-0' }}
       </p>
+
+      <!-- La proyección solo tiene sentido en el mes en curso -->
+      <p *ngIf="s.projection" style="margin:10px 0 0">
+        A este ritmo terminarás el mes con
+        <strong [style.color]="s.projection.projectedAvailable < 0 ? 'var(--red)' : 'var(--green)'">
+          {{ s.projection.projectedAvailable | currency:'CLP':'symbol-narrow':'1.0-0' }}
+        </strong>
+        <span *ngIf="s.projection.preliminar" class="muted">(estimación preliminar: llevas pocos días)</span>
+      </p>
+      <p *ngIf="textoComparacion() as t" class="muted" style="margin:6px 0 0">{{ t }}</p>
+
+      <button *ngIf="!s.isCurrentMonth" class="ghost" (click)="irAMes(null)" style="margin-top:12px">
+        Volver al mes actual
+      </button>
+    </div>
+
+    <!-- Lo que pide atención pronto: pagos por vencer y presupuestos al límite -->
+    <div class="grid" [class.grid-2]="s.upcomingPayments?.length" style="margin-top:16px" *ngIf="s.isCurrentMonth">
+      <div class="card" *ngIf="s.upcomingPayments?.length">
+        <h3>Próximos pagos</h3>
+        <div *ngFor="let p of s.upcomingPayments"
+             style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)">
+          <span>{{ p.label }} <span class="muted">· {{ cuandoVence(p.daysLeft) }}</span></span>
+          <strong style="white-space:nowrap">{{ p.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Presupuestos</h3>
+        <div *ngFor="let b of alertas" style="padding:4px 0 8px">
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <span style="text-transform:capitalize">{{ b.category }}</span>
+            <strong [style.color]="b.level === 'excedido' ? 'var(--red)' : 'var(--yellow)'">{{ b.pct }}%</strong>
+          </div>
+          <div style="height:8px;border-radius:5px;background:var(--card-hi);overflow:hidden;margin-top:4px">
+            <div [style.width.%]="b.pct > 100 ? 100 : b.pct"
+                 [style.background]="b.level === 'excedido' ? 'var(--red)' : 'var(--yellow)'" style="height:100%"></div>
+          </div>
+        </div>
+        <p *ngIf="!alertas.length" class="muted" style="margin:0">
+          {{ s.budgets?.length ? 'Vas dentro de todos tus presupuestos.' : 'Define topes por categoría y te avisamos antes de pasarte.' }}
+        </p>
+        <a routerLink="/presupuestos" style="display:inline-block;margin-top:10px">
+          {{ s.budgets?.length ? 'Ver presupuestos' : 'Definir presupuestos' }} →
+        </a>
+      </div>
     </div>
 
     <div class="grid grid-2" style="margin-top:16px">
@@ -83,8 +139,20 @@ function tintarChartJs() {
       <!-- Últimos movimientos + banco -->
       <div class="card">
         <h3>Últimos movimientos</h3>
+        <!-- Búsqueda y filtro sobre todo el historial, y descarga para Excel -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <input [(ngModel)]="filtro.q" (ngModelChange)="filtrar()" placeholder="Buscar…"
+                 style="flex:2;min-width:120px">
+          <select [(ngModel)]="filtro.category" (ngModelChange)="filtrar()" style="flex:1;min-width:110px">
+            <option value="">Todas</option>
+            <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
+            <option value="ingreso">ingresos</option>
+          </select>
+          <button class="ghost" (click)="exportar()" [disabled]="exportando"
+                  title="Descargar lo filtrado en CSV para Excel">{{ exportando ? '…' : '⬇ CSV' }}</button>
+        </div>
         <div *ngIf="!movements.length && !cargandoMas" class="muted">
-          Aún no hay movimientos. Registra un gasto o conecta tu banco.
+          {{ hayFiltro ? 'Ningún movimiento coincide con la búsqueda.' : 'Aún no hay movimientos. Registra un gasto o conecta tu banco.' }}
         </div>
 
         <!-- Alto acotado con scroll propio: al llegar al final se pide la
@@ -419,6 +487,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   busyId: string | null = null;
   sinConexion = false;
 
+  mesVisto: string | null = null;      // null = el mes en curso
+  filtro = { q: '', category: '' };
+  historialCargado = false;
+  exportando = false;
+  private seqHist = 0;
+  private temporizadorBusqueda?: ReturnType<typeof setTimeout>;
+  private static readonly MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+    'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
   // Edición en línea: se trabaja sobre un borrador para poder cancelar
   // sin haber tocado lo que se ve en pantalla.
   editandoGasto: string | null = null;
@@ -438,13 +515,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
   cargandoMas = false;
   private readonly PAGINA = 20;
 
-  /** Historial paginado; cae al resumen si /movements no está disponible. */
+  /**
+   * Historial paginado. Solo se recurre al resumen del mes si /movements nunca
+   * respondió: con un filtro sin resultados la lista vacía es la respuesta
+   * correcta, no una señal para mostrar los movimientos sin filtrar.
+   */
   get movements(): any[] {
-    if (this.movimientos.length || !this.s) return this.movimientos;
+    if (this.historialCargado || !this.s) return this.movimientos;
     return this.s.lastMovements || [];
   }
   newDesc = ''; newAmount: number | null = null; newCategory = 'supermercado';
-  categories = ['supermercado', 'comida', 'transporte', 'salud', 'cuentas', 'ocio', 'otros'];
+  categories = CATEGORIAS;
   private sub?: Subscription;
   private incomeSub?: Subscription;
   private pendingSub?: Subscription;
@@ -514,7 +595,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   async load() {
     try {
-      this.s = await firstValueFrom(this.http.get<any>(`${API}/dashboard/summary`));
+      const mes = this.mesVisto ? `?month=${this.mesVisto}` : '';
+      this.s = await firstValueFrom(this.http.get<any>(`${API}/dashboard/summary${mes}`));
       this.sinConexion = false;
     } catch {
       // Instalada como app puede abrirse sin red: mejor decirlo que dejar la
@@ -577,28 +659,108 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   // ---- Historial de movimientos ----
 
-  /** Vuelve a la primera página: tras crear, editar o borrar algo. */
+  /** Vuelve a la primera página: tras crear, editar, borrar o cambiar el filtro. */
   async recargarMovimientos() {
+    // Cada recarga abre una "época": lo que llegue de una anterior se descarta.
+    // Si no, una respuesta lenta de la búsqueda previa se mezclaba con la nueva.
+    this.seqHist++;
     this.movimientos = [];
     this.hayMasMovs = true;
+    this.cargandoMas = false; // la recarga manda aunque haya una página en vuelo
     await this.cargarMasMovimientos();
   }
 
   async cargarMasMovimientos() {
     if (this.cargandoMas || !this.hayMasMovs) return;
+    const epoca = this.seqHist;
     this.cargandoMas = true;
     try {
-      const r = await firstValueFrom(this.http.get<any>(
-        `${API}/movements?limit=${this.PAGINA}&offset=${this.movimientos.length}`
-      ));
+      const params = this.paramsFiltro();
+      params.set('limit', String(this.PAGINA));
+      params.set('offset', String(this.movimientos.length));
+      const r = await firstValueFrom(this.http.get<any>(`${API}/movements?${params}`));
+      if (epoca !== this.seqHist) return; // llegó tarde: ya se pidió otra cosa
       this.movimientos = [...this.movimientos, ...r.items];
       this.hayMasMovs = r.hayMas;
+      this.historialCargado = true;
     } catch {
       // Sin historial no se corta la página: el resumen del mes sigue sirviendo.
-      this.hayMasMovs = false;
+      if (epoca === this.seqHist) this.hayMasMovs = false;
     } finally {
-      this.cargandoMas = false;
+      if (epoca === this.seqHist) this.cargandoMas = false;
     }
+  }
+
+  get hayFiltro() { return !!(this.filtro.q.trim() || this.filtro.category); }
+
+  private paramsFiltro() {
+    const p = new URLSearchParams();
+    if (this.filtro.q.trim()) p.set('q', this.filtro.q.trim());
+    if (this.filtro.category) p.set('category', this.filtro.category);
+    return p;
+  }
+
+  /** Espera a que se deje de escribir: una petición por búsqueda, no por tecla. */
+  filtrar() {
+    clearTimeout(this.temporizadorBusqueda);
+    this.temporizadorBusqueda = setTimeout(() => this.recargarMovimientos(), 300);
+  }
+
+  /**
+   * Un <a href> no puede mandar el token de sesión, así que el CSV se baja por
+   * HttpClient y se entrega al navegador como archivo local.
+   */
+  async exportar() {
+    this.exportando = true;
+    try {
+      const blob = await firstValueFrom(
+        this.http.get(`${API}/movements/export?${this.paramsFiltro()}`, { responseType: 'blob' })
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `finfam-movimientos-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      // Revocar al instante puede cortar la descarga en algunos navegadores.
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } finally {
+      this.exportando = false;
+    }
+  }
+
+  // ---- Navegación por meses ----
+
+  irAMes(mes: string | null) {
+    this.mesVisto = mes;
+    this.load();
+  }
+
+  nombreMes(clave?: string | null): string {
+    if (!clave) return '';
+    const [y, m] = clave.split('-').map(Number);
+    return `${DashboardComponent.MESES[m - 1]} ${y}`;
+  }
+
+  /** "Llevas 12% más que a esta altura de agosto", o null si no hay base. */
+  textoComparacion(): string | null {
+    const c = this.s?.comparison;
+    if (!c || c.variationPct === null || c.variationPct === undefined) return null;
+    const mesAnterior = DashboardComponent.MESES[Number(this.s.previousMonth.split('-')[1]) - 1];
+    const v = c.variationPct;
+    if (v === 0) return c.samePeriod ? `Vas igual que a esta altura de ${mesAnterior}.` : `Gastaste lo mismo que en ${mesAnterior}.`;
+    const cuanto = `${Math.abs(v)}% ${v > 0 ? 'más' : 'menos'}`;
+    return c.samePeriod
+      ? `Llevas ${cuanto} en gastos variables que a esta altura de ${mesAnterior}.`
+      : `Gastaste ${cuanto} en gastos variables que en ${mesAnterior}.`;
+  }
+
+  /** Presupuestos que ya piden atención (80% o más). */
+  get alertas(): any[] {
+    return (this.s?.budgets || []).filter((b: any) => b.level !== 'ok');
+  }
+
+  cuandoVence(dias: number) {
+    return dias === 0 ? 'vence hoy' : dias === 1 ? 'vence mañana' : `en ${dias} días`;
   }
 
   /** Pide la página siguiente al acercarse al final de la lista. */

@@ -27,6 +27,8 @@ model User {
   bankLinks     BankLink[]
   gmailLink     GmailLink?
   pending       PendingMovement[]
+  budgets       Budget[]
+  goals         SavingsGoal[]
 }
 
 // Datos recolectados en el onboarding
@@ -138,4 +140,28 @@ model PendingMovement {
   createdAt   DateTime @default(now())
 
   @@index([userId, status])
+}
+
+/// Tope mensual de gasto variable para una categoría. Uno por categoría.
+model Budget {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category String
+  amount   Decimal @db.Decimal(12, 2)
+
+  @@unique([userId, category])
+}
+
+/// Meta de ahorro. Lo ahorrado se registra con aportes y no toca el saldo
+/// disponible: la plata sigue en la cuenta hasta que se use.
+model SavingsGoal {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  target    Decimal   @db.Decimal(12, 2)
+  saved     Decimal   @default(0) @db.Decimal(12, 2)
+  deadline  DateTime?
+  createdAt DateTime  @default(now())
 }
