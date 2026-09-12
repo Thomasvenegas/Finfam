@@ -120,24 +120,17 @@ function extractAmount(text, anchorRe = OUTFLOW) {
  * ("Conoce más beneficios en nuestra app") se roben la descripción.
  */
 function sentenceWithAmount(text) {
-  const m = text.match(/(?:\$|CLP\$?)\s*\d[\d.,]*/);
-  if (!m) return null;
-  const inicio = Math.max(
-    text.lastIndexOf('.', m.index) + 1,
-    text.lastIndexOf('\n', m.index) + 1
-  );
-  let fin = text.length;
-  for (const sep of ['.', '\n']) {
-    const i = text.indexOf(sep, m.index);
-    if (i !== -1 && i < fin) fin = i;
-  }
-  return text.slice(inicio, fin).trim();
+  // Fin de frase es un punto seguido de espacio o salto de línea. Antes se
+  // cortaba en cualquier punto, incluido el de miles de "$12.345": la frase
+  // quedaba en "…por $12" y este recorte casi nunca servía.
+  const frases = text.split(/(?<=[.!?])\s+|\n+/);
+  return frases.find(f => /(?:\$|CLP\$?)\s*\d/.test(f))?.trim() || null;
 }
 
 /** Extrae el nombre del comercio o destinatario. */
 function extractMerchant(text, subject, type = 'expense') {
   // Frases que cierran el nombre del comercio: fecha, medio de pago, monto...
-  const END = String.raw`(?=\s+(?:el|los)\s+d[ií]a\b|\s+el\s+\d|\s+por\s+(?:\$|CLP)|\s+(?:con|en|a|de)\s+(?:tu|su|la|el|nuestr[ao])\s+(?:tarjeta|cuenta|app|banco|sitio)|\s+con\s+(?:tarjeta|cuenta)|\s+a\s+las\s+\d|[.,;\n]|$)`;
+  const END = String.raw`(?=\s+(?:el|los)\s+d[ií]a\b|\s+el\s+\d|\s+por\s+(?:\$|CLP)|\s+(?:con|en|a|de)\s+(?:tu|su|la|el|nuestr[ao])\s+(?:tarjeta|cuenta|app|banco|sitio)|\s+con\s+(?:tarjeta|cuenta)|\s+a\s+las\s+\d|[,;\n]|\.(?=\s|$)|$)`;
 
   // "compra por $12.345 en LIDER EL BOSQUE el 05/09/2026"
   const enComercio = new RegExp(String.raw`\ben\s+(?:el\s+comercio\s+)?["']?(.{2,60}?)["']?` + END, 'i');
@@ -153,8 +146,8 @@ function extractMerchant(text, subject, type = 'expense') {
     : [enComercio, aDestino, deOrigen];
 
   patterns.push(
-    /\bcomercio\s*:\s*([^\n.,;]{2,60})/i,     // "Comercio: LIDER"
-    /\bestablecimiento\s+([^\n.,;]{2,60})/i    // "en el establecimiento LIDER"
+    /\bcomercio\s*:\s*([^\n,;]{2,60})/i,     // "Comercio: LIDER"
+    /\bestablecimiento\s+([^\n,;]{2,60})/i    // "en el establecimiento LIDER"
   );
 
   // Primero la frase del monto; si ahí no aparece, se mira el correo completo.
@@ -162,7 +155,7 @@ function extractMerchant(text, subject, type = 'expense') {
 
   for (const re of patterns) {
     const m = ambitos.map(a => a.match(re)).find(Boolean);
-    const merchant = m?.[1]?.trim().replace(/\s+/g, ' ');
+    const merchant = m?.[1]?.trim().replace(/\s+/g, ' ').replace(/\.+$/, '');
     // Descarta capturas que en realidad son fragmentos de la frase.
     if (merchant && merchant.length >= 2 &&
         !/^(tu|su|la|el|los|las|una?|cuenta|tarjeta|pesos)$/i.test(merchant)) {

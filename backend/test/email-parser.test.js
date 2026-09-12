@@ -302,3 +302,30 @@ test('un abono usa el remitente del dinero, no un lugar mencionado después', ()
   assert.equal(r.type, 'income');
   assert.equal(r.merchant, 'PEDRO GONZALEZ');
 });
+
+test('un dominio en el nombre del comercio no se corta en el punto', () => {
+  const r = parseBankEmail({
+    from: 'enviodigital@bancochile.cl',
+    subject: 'Aviso de compra',
+    text: 'Se realizó una compra por $7.990 en NETFLIX.COM con tu tarjeta terminada en 1234.'
+  });
+  assert.equal(r.merchant, 'NETFLIX.COM');
+});
+
+test('el nombre con barra tampoco se corta', () => {
+  const r = parseBankEmail({
+    from: 'enviodigital@bancochile.cl',
+    subject: 'Aviso de compra',
+    text: 'Se realizó una compra por $12.500 en APPLE.COM/BILL con tu tarjeta terminada en 1234.'
+  });
+  assert.equal(r.merchant, 'APPLE.COM/BILL');
+});
+
+test('"Comercio: NETFLIX.COM." conserva el dominio y suelta el punto final', () => {
+  const r = parseBankEmail({
+    from: 'alertas@bci.cl',
+    subject: 'Cargo',
+    text: 'Se realizó un cargo por $7.990. Comercio: NETFLIX.COM.'
+  });
+  assert.equal(r.merchant, 'NETFLIX.COM');
+});
