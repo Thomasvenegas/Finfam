@@ -4,11 +4,15 @@
 # puede programarse a sí mismo: este cron externo lo despierta y dispara la
 # revisión. Los movimientos detectados quedan pendientes de confirmación en la
 # app, no se registran solos.
+#
+# Ojo con la frecuencia: GitHub trata los cron de repositorios gratuitos como
+# "mejor esfuerzo". Aunque se pida cada 10 minutos, en la práctica corre cada
+# 1 a 4 horas. Para revisiones más seguidas hace falta un cron externo real.
 name: Revisar correos del banco
 
 on:
   schedule:
-    - cron: '*/10 * * * *'   # cada 10 minutos
+    - cron: '*/10 * * * *'
   workflow_dispatch:          # permite dispararlo a mano desde la pestaña Actions
 
 jobs:
@@ -20,22 +24,37 @@ jobs:
           BACKEND_URL: https://finfam-backend-nwh2.onrender.com
           INGEST_SECRET: ${{ secrets.EMAIL_INGEST_SECRET }}
         run: |
+          # Sin el secreto no hay nada útil que hacer. Antes esto contaba como
+          # fallo y GitHub mandaba un correo en cada ejecución; ahora queda como
+          # advertencia en la pestaña Actions hasta que se configure.
           if [ -z "$INGEST_SECRET" ]; then
-            echo "Falta el secreto EMAIL_INGEST_SECRET en el repositorio."
-            exit 1
+            echo "::warning::Falta el secreto EMAIL_INGEST_SECRET (Settings > Secrets and variables > Actions). La revisión automática no corre hasta agregarlo."
+            exit 0
           fi
 
-          # El primer intento puede tardar ~1 min si Render tenía el servicio dormido.
-          codigo=$(curl -s -o respuesta.json -w '%{http_code}' \
-            -X POST "$BACKEND_URL/api/gmail/sync-all" \
-            -H "x-ingest-key: $INGEST_SECRET" \
-            --max-time 180)
+          # Render free puede tardar en despertar y a veces responde 502
+          # mientras arranca: se reintenta antes de dar la revisión por fallida.
+          for intento in 1 2 3; do
+            codigo=$(curl -s -o respuesta.json -w '%{http_code}' \
+              -X POST "$BACKEND_URL/api/gmail/sync-all" \
+              -H "x-ingest-key: $INGEST_SECRET" \
+              --max-time 180) || true
+            codigo=${codigo:-000}
+            echo "Intento $intento: HTTP $codigo"
 
-          echo "HTTP $codigo"
-          cat respuesta.json || true
-          echo
+            case "$codigo" in
+              200)
+                cat respuesta.json; echo
+                exit 0 ;;
+              401)
+                # Reintentar no arregla un secreto equivocado.
+                echo "::error::El backend rechazó el secreto: EMAIL_INGEST_SECRET en GitHub no coincide con el de Render."
+                exit 1 ;;
+            esac
 
-          if [ "$codigo" != "200" ]; then
-            echo "La revisión falló."
-            exit 1
-          fi
+            if [ "$intento" -lt 3 ]; then sleep 20; fi
+          done
+
+          echo "::error::El backend no respondió bien tras 3 intentos."
+          cat respuesta.json 2>/dev/null || true
+          exit 1
