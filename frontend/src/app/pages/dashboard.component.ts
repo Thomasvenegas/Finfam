@@ -140,14 +140,28 @@ function mezclar(a: string, b: string, t: number): string {
         <select [(ngModel)]="newCategory">
           <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
         </select>
-        <button style="margin-top:14px;width:100%" [disabled]="!newDesc || !newAmount" (click)="addExpense()">
-          Descontar del saldo
+        <!-- Un ahorro sale del saldo como cualquier gasto y además se suma a una meta -->
+        <ng-container *ngIf="newCategory === 'ahorro'">
+          <label>¿A qué meta va?</label>
+          <select *ngIf="metas.length" [(ngModel)]="newGoalId">
+            <option *ngFor="let g of metas" [value]="g.id">{{ g.name }} ({{ g.pct }}%)</option>
+          </select>
+          <p *ngIf="!metas.length" class="muted" style="margin:6px 0 0">
+            Para ahorrar, primero crea una meta en <a routerLink="/metas">Metas</a>.
+          </p>
+        </ng-container>
+        <p *ngIf="errorGasto" class="error">{{ errorGasto }}</p>
+        <button style="margin-top:14px;width:100%"
+                [disabled]="!newDesc || !newAmount || (newCategory === 'ahorro' && !newGoalId)"
+                (click)="addExpense()">
+          {{ newCategory === 'ahorro' ? 'Descontar del saldo y sumar a la meta' : 'Descontar del saldo' }}
         </button>
       </div>
 
       <!-- Últimos movimientos + banco -->
       <div class="card">
         <h3>Últimos movimientos</h3>
+        <p *ngIf="errorMov" class="error">{{ errorMov }}</p>
         <!-- Búsqueda y filtro sobre todo el historial, y descarga para Excel -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           <input [(ngModel)]="filtro.q" (ngModelChange)="filtrar()" placeholder="Buscar…"
@@ -174,7 +188,7 @@ function mezclar(a: string, b: string, t: number): string {
           <div *ngIf="editandoGasto !== m.id" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
             <span style="flex:1;min-width:0">
               {{ m.description }}
-              <span class="muted">· {{ m.category }} · {{ m.source }}</span>
+              <span class="muted">· {{ m.category }}<span *ngIf="m.goal"> → {{ m.goal }}</span> · {{ m.source }}</span>
             </span>
             <a *ngIf="mailUrl(m) as url" [href]="url" target="_blank" rel="noopener"
                class="muted" title="Abrir en Gmail el correo del que salió este movimiento"
@@ -199,8 +213,12 @@ function mezclar(a: string, b: string, t: number): string {
                 <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
               </select>
             </div>
+            <select *ngIf="borrador.category === 'ahorro' && metas.length" [(ngModel)]="borrador.goalId">
+              <option *ngFor="let g of metas" [value]="g.id">Meta: {{ g.name }}</option>
+            </select>
             <div style="display:flex;gap:8px">
-              <button (click)="guardarGasto(m)" [disabled]="busyId === m.id || !borrador.description || !borrador.amount">
+              <button (click)="guardarGasto(m)"
+                      [disabled]="busyId === m.id || !borrador.description || !borrador.amount || (borrador.category === 'ahorro' && !borrador.goalId)">
                 Guardar
               </button>
               <button class="ghost" (click)="editandoGasto = null">Cancelar</button>
@@ -534,6 +552,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return this.s.lastMovements || [];
   }
   newDesc = ''; newAmount: number | null = null; newCategory = 'supermercado';
+  newGoalId: string | null = null;
+  metas: any[] = [];
+  errorGasto = '';
+  errorMov = '';
   categories = CATEGORIAS;
   private sub?: Subscription;
   private incomeSub?: Subscription;
@@ -585,6 +607,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.load();
+    this.loadMetas();
     this.loadIngestAddress();
     this.loadGmailStatus();
     this.loadPending();
@@ -864,20 +887,28 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   editarGasto(m: any) {
     this.editandoGasto = m.id;
-    this.borrador = { description: m.description, amount: m.amount, category: m.category };
+    this.borrador = {
+      description: m.description, amount: m.amount, category: m.category,
+      goalId: m.goalId || this.metas[0]?.id || null
+    };
   }
 
   async guardarGasto(m: any) {
     this.busyId = m.id;
+    this.errorMov = '';
     try {
       await firstValueFrom(this.http.patch(`${API}/expenses/${m.id}`, {
         description: this.borrador.description,
         amount: Number(this.borrador.amount),
-        category: this.borrador.category
+        category: this.borrador.category,
+        ...(this.borrador.category === 'ahorro' ? { goalId: this.borrador.goalId } : {})
       }));
       this.editandoGasto = null;
       await this.load();
       await this.recargarMovimientos();
+      this.loadMetas();
+    } catch (e: any) {
+      this.errorMov = e?.error?.error || 'No se pudo guardar el cambio.';
     } finally {
       this.busyId = null;
     }
@@ -953,10 +984,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   /** Quita un gasto mal registrado y devuelve el monto al saldo. */
   async removeExpense(m: any) {
     this.busyId = m.id;
+    this.errorMov = '';
     try {
       await firstValueFrom(this.http.delete(`${API}/expenses/${m.id}`));
       await this.load();
       await this.recargarMovimientos();
+      this.loadMetas();
+    } catch (e: any) {
+      // Por ejemplo, un ahorro cuya meta ya tuvo retiros por más de lo que quedaría.
+      this.errorMov = e?.error?.error || 'No se pudo quitar el gasto.';
     } finally {
       this.busyId = null;
     }
@@ -1073,16 +1109,35 @@ export class DashboardComponent implements OnInit, OnDestroy {
     setTimeout(() => (this.copied = false), 2000);
   }
 
+  /** Metas de ahorro, para elegir a cuál va un gasto de categoría "ahorro". */
+  async loadMetas() {
+    try {
+      this.metas = await firstValueFrom(this.http.get<any[]>(`${API}/goals`));
+      if (!this.metas.some(g => g.id === this.newGoalId)) this.newGoalId = this.metas[0]?.id ?? null;
+    } catch {
+      this.metas = [];
+    }
+  }
+
   async addExpense() {
-    await firstValueFrom(this.http.post(`${API}/expenses`, {
-      description: this.newDesc,
-      amount: this.newAmount,
-      category: this.newCategory
-    }));
+    this.errorGasto = '';
+    try {
+      await firstValueFrom(this.http.post(`${API}/expenses`, {
+        description: this.newDesc,
+        amount: this.newAmount,
+        category: this.newCategory,
+        ...(this.newCategory === 'ahorro' ? { goalId: this.newGoalId } : {})
+      }));
+    } catch (e: any) {
+      // Antes un rechazo del servidor fallaba callado y no se sabía por qué.
+      this.errorGasto = e?.error?.error || 'No se pudo registrar el gasto.';
+      return;
+    }
     this.newDesc = ''; this.newAmount = null;
     // el socket dispara load(), pero refrescamos por si acaso
     this.load();
     this.recargarMovimientos();
+    if (this.newCategory === 'ahorro') this.loadMetas(); // la meta cambió
   }
 
   /** Abre el widget de Fintoc: el usuario elige Banco de Chile (u otro) y

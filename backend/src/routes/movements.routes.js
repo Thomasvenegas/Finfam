@@ -34,6 +34,8 @@ const paraLista = {
     category: e.category,
     source: e.source,
     externalId: e.externalId, // permite abrir el correo de origen
+    goalId: e.goalId,
+    goal: e.goal?.name || null, // si es un ahorro, la meta a la que se sumó
     date: e.date
   }),
   income: i => ({
@@ -85,7 +87,10 @@ function construirWhere(userId, f) {
 
 async function leer(where, tope) {
   const [gastos, abonos] = await Promise.all([
-    where.gastos ? prisma.expense.findMany({ where: where.gastos, orderBy: { date: 'desc' }, take: tope }) : [],
+    where.gastos ? prisma.expense.findMany({
+      where: where.gastos, orderBy: { date: 'desc' }, take: tope,
+      include: { goal: { select: { name: true } } }
+    }) : [],
     where.abonos ? prisma.income.findMany({ where: where.abonos, orderBy: { date: 'desc' }, take: tope }) : []
   ]);
   const mezclados = [...gastos.map(paraLista.expense), ...abonos.map(paraLista.income)]

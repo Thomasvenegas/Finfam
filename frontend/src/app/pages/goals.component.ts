@@ -26,8 +26,9 @@ const DIA = 864e5;
   <div class="container">
     <h2>Metas de ahorro</h2>
     <p class="muted" style="margin-top:0">
-      Aparta plata para algo concreto. Aportar no descuenta tu saldo del mes: la plata sigue
-      en tu cuenta, solo la marcas como destinada a la meta.
+      Aparta plata para algo concreto. Si registras un gasto con categoría <strong>ahorro</strong>,
+      se descuenta de tu saldo y se suma aquí a la meta que elijas. Los botones Aportar y Retirar
+      de esta página, en cambio, no tocan el saldo: sirven para anotar lo que ya tenías ahorrado.
     </p>
 
     <p *ngIf="error" class="error">{{ error }}</p>

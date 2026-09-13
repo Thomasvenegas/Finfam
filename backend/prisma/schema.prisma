@@ -78,6 +78,10 @@ model Expense {
   card        CreditCard? @relation(fields: [cardId], references: [id])
   externalId  String?  @unique // id del movimiento en Fintoc, evita duplicados
   date        DateTime @default(now())
+  // Si es un ahorro, la meta a la que se suma. Si la meta se borra el gasto
+  // queda como ahorro sin meta, en vez de desaparecer del historial.
+  goalId      String?
+  goal        SavingsGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
 
   @@index([userId, date])
 }
@@ -164,4 +168,5 @@ model SavingsGoal {
   saved     Decimal   @default(0) @db.Decimal(12, 2)
   deadline  DateTime?
   createdAt DateTime  @default(now())
+  expenses  Expense[] // gastos de categoría "ahorro" que aportan a esta meta
 }

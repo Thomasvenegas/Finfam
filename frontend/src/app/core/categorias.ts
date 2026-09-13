@@ -24,6 +24,7 @@ export const CATEGORIAS = [
   'viajes',
   'regalos',
   'seguros',
+  'ahorro',
   'otros'
 ];
 

@@ -51,6 +51,6 @@ test('las categorías que sugiere el backend existen en el frontend', () => {
   // una categoría que el frontend no lista, no aparece en filtros ni presupuestos.
   const frontend = ['supermercado', 'comida', 'transporte', 'vivienda', 'cuentas', 'hogar', 'salud', 'educación',
     'mascotas', 'ropa', 'cuidado personal', 'tecnología', 'suscripciones', 'ocio', 'deporte',
-    'viajes', 'regalos', 'seguros', 'otros'];
+    'viajes', 'regalos', 'seguros', 'ahorro', 'otros'];
   for (const [cat] of REGLAS_CATEGORIA) assert.ok(frontend.includes(cat), `falta "${cat}" en el frontend`);
 });
