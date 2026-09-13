@@ -74,4 +74,11 @@ router.get('/me', requireAuth, async (req, res) => {
   res.json(publicUser(user));
 });
 
+// Renueva el token mientras el usuario está activo. Los tokens son de vida
+// corta: si nadie los renueva porque la sesión quedó inactiva, vencen solos en
+// el servidor, y un token copiado deja de servir.
+router.post('/refresh', requireAuth, (req, res) => {
+  res.json({ token: signToken(req.userId) });
+});
+
 export default router;

@@ -1,6 +1,7 @@
 import { Component, AfterViewInit, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { environment } from '../../environments/environment';
 
@@ -15,6 +16,12 @@ declare const google: any;
     <div class="card" style="width:min(420px,92vw)">
       <h1 style="color:var(--magenta);text-shadow:0 0 24px rgba(255,46,151,.5)">FinFam</h1>
       <p class="muted">Tu mes, de un vistazo. Ingresos, gastos y saldo en tiempo real.</p>
+      <p *ngIf="motivo" role="status"
+         style="background:var(--card-hi);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px">
+        {{ motivo === 'inactividad'
+           ? 'Cerramos tu sesión tras 20 minutos sin actividad, para proteger tus datos.'
+           : 'Tu sesión expiró. Vuelve a ingresar.' }}
+      </p>
 
       <div style="display:flex;gap:8px;margin:16px 0">
         <button class="ghost" [style.borderColor]="mode==='login' ? 'var(--neon)' : ''" (click)="mode='login'">Iniciar sesión</button>
@@ -49,11 +56,14 @@ export class LoginComponent implements AfterViewInit {
   mode: 'login' | 'register' = 'login';
   name = ''; email = ''; password = '';
   error = ''; busy = false;
+  motivo: string | null = null;
 
   // Reemplaza con tu Client ID de Google Cloud Console
   readonly GOOGLE_CLIENT_ID = environment.googleClientId;
 
-  constructor(private auth: AuthService, private zone: NgZone) {}
+  constructor(private auth: AuthService, private zone: NgZone, route: ActivatedRoute) {
+    this.motivo = route.snapshot.queryParamMap.get('motivo');
+  }
 
   ngAfterViewInit() {
     const init = () => {

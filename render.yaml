@@ -20,7 +20,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES
-        value: 7d
+        value: 25m
       - key: GOOGLE_CLIENT_ID
         value: sandbox-placeholder.apps.googleusercontent.com
       - key: FINTOC_SECRET_KEY

@@ -22,5 +22,8 @@ export class SocketService {
     this.socket.on('pending:created', p => this.pendingCreated$.next(p));
   }
 
-  disconnect() { this.socket?.disconnect(); }
+  disconnect() {
+    this.socket?.disconnect();
+    this.socket = undefined;
+  }
 }

@@ -15,6 +15,8 @@ export function requireAuth(req, res, next) {
 
 export function signToken(userId) {
   return jwt.sign({ sub: userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES || '7d'
+    // 25 min: la app cierra la sesión a los 20 sin actividad y renueva el token
+    // mientras hay uso; el margen cubre el aviso del último minuto.
+    expiresIn: process.env.JWT_EXPIRES || '25m'
   });
 }

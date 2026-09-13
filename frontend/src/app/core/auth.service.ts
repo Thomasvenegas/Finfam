@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { SocketService } from './socket.service';
 
 export const API = environment.apiUrl;
 
@@ -13,7 +14,7 @@ interface AuthResponse { token: string; user: User; }
 export class AuthService {
   user = signal<User | null>(null);
 
-  constructor(private http: HttpClient, private router: Router) {
+  constructor(private http: HttpClient, private router: Router, private socket: SocketService) {
     if (this.token) {
       this.http.get<User>(`${API}/auth/me`).subscribe({
         next: u => this.user.set(u),
@@ -26,6 +27,9 @@ export class AuthService {
 
   private handle(res: AuthResponse) {
     localStorage.setItem('finfam_token', res.token);
+    // El reloj de inactividad parte al entrar: si no, una marca vieja de otra
+    // sesión cerraría esta apenas iniciada.
+    localStorage.setItem('finfam_actividad', String(Date.now()));
     this.user.set(res.user);
     this.router.navigate([res.user.onboarded ? '/dashboard' : '/onboarding']);
   }
@@ -47,9 +51,18 @@ export class AuthService {
     if (u) this.user.set({ ...u, onboarded: true });
   }
 
-  logout() {
+  /** Borra la sesión de este navegador sin navegar, para quien decide adónde ir. */
+  cerrarSesionLocal() {
     localStorage.removeItem('finfam_token');
+    localStorage.removeItem('finfam_actividad');
+    // Sin esto el socket seguía abierto: al entrar con otra cuenta en la misma
+    // pestaña quedaba unido a la sala del usuario anterior y recibía sus eventos.
+    this.socket.disconnect();
     this.user.set(null);
-    this.router.navigate(['/login']);
+  }
+
+  logout(motivo?: 'inactividad' | 'expirada') {
+    this.cerrarSesionLocal();
+    this.router.navigate(['/login'], motivo ? { queryParams: { motivo } } : {});
   }
 }

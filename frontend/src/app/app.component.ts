@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { SwUpdate, VersionReadyEvent } from '@angular/service-worker';
 import { filter } from 'rxjs/operators';
 import { AuthService } from './core/auth.service';
+import { SessionService } from './core/session.service';
 
 @Component({
   selector: 'app-root',
@@ -32,13 +33,21 @@ import { AuthService } from './core/auth.service';
         Actualizar
       </button>
     </div>
+    <!-- Aviso de cierre por inactividad durante el último minuto -->
+    <div *ngIf="sesion.aviso() !== null" role="alert"
+         style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:50;max-width:92vw;
+                background:var(--card);border:1px solid var(--yellow);border-radius:12px;padding:12px 16px;
+                display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+      <span>Por inactividad, tu sesión se cerrará en <strong>{{ sesion.aviso() }} s</strong>.</span>
+      <button (click)="sesion.seguirConectado()">Seguir conectado</button>
+    </div>
     <router-outlet />
   `
 })
 export class AppComponent {
   hayVersionNueva = false;
 
-  constructor(public auth: AuthService, private updates: SwUpdate) {
+  constructor(public auth: AuthService, public sesion: SessionService, private updates: SwUpdate) {
     if (this.updates.isEnabled) {
       this.updates.versionUpdates
         .pipe(filter((e): e is VersionReadyEvent => e.type === 'VERSION_READY'))
