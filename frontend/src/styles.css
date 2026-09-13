@@ -188,6 +188,35 @@ details summary::marker { color: var(--magenta); }
 .chart-box { position: relative; height: 260px; }
 .chart-box canvas { max-width: 100%; }
 
+/* Historial de movimientos. Cada fila es una grilla de columnas fijas
+   (texto | monto | acciones): antes era un flex y los ingresos, que no traen
+   ✎ ✕, dejaban su monto corrido respecto del de los gastos. */
+.mov-filtros {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.mov-lista {
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;               /* que la barra de scroll no tape el ✕ */
+}
+.mov-item { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.mov-fila {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 66px;
+  align-items: center;
+  column-gap: 10px;
+}
+.mov-desc { display: block; overflow-wrap: anywhere; }
+.mov-meta { display: block; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
+.mov-meta a { color: var(--neon); white-space: nowrap; }
+.mov-monto { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mov-acciones { display: flex; justify-content: flex-end; gap: 6px; }
+.mov-acciones button { width: 30px; padding: 2px 0; line-height: 1.4; }
+
 @media (max-width: 760px) {
   .grid-2 { grid-template-columns: 1fr; }
 
@@ -207,6 +236,10 @@ details summary::marker { color: var(--magenta); }
 @media (max-width: 420px) {
   .saldo { font-size: 2.1rem; }
   .container { padding: 14px 12px; }
+
+  /* La búsqueda en una línea propia; debajo, categoría y CSV */
+  .mov-filtros { grid-template-columns: minmax(0, 1fr) auto; }
+  .mov-filtros input { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

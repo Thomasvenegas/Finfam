@@ -163,10 +163,9 @@ function mezclar(a: string, b: string, t: number): string {
         <h3>Últimos movimientos</h3>
         <p *ngIf="errorMov" class="error">{{ errorMov }}</p>
         <!-- Búsqueda y filtro sobre todo el historial, y descarga para Excel -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-          <input [(ngModel)]="filtro.q" (ngModelChange)="filtrar()" placeholder="Buscar…"
-                 style="flex:2;min-width:120px">
-          <select [(ngModel)]="filtro.category" (ngModelChange)="filtrar()" style="flex:1;min-width:110px">
+        <div class="mov-filtros">
+          <input [(ngModel)]="filtro.q" (ngModelChange)="filtrar()" placeholder="Buscar…">
+          <select [(ngModel)]="filtro.category" (ngModelChange)="filtrar()">
             <option value="">Todas</option>
             <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
             <option value="ingreso">ingresos</option>
@@ -180,43 +179,47 @@ function mezclar(a: string, b: string, t: number): string {
 
         <!-- Alto acotado con scroll propio: al llegar al final se pide la
              página siguiente, así se puede ir hacia atrás en el tiempo. -->
-        <div #listaMovs (scroll)="alScrollear(listaMovs)"
-             style="max-height:340px;overflow-y:auto;overscroll-behavior:contain">
-        <div *ngFor="let m of movements" style="padding:6px 0;border-bottom:1px solid var(--line)">
+        <div #listaMovs (scroll)="alScrollear(listaMovs)" class="mov-lista">
+        <div *ngFor="let m of movements" class="mov-item">
 
-          <!-- Lectura -->
-          <div *ngIf="editandoGasto !== m.id" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-            <span style="flex:1;min-width:0">
-              {{ m.description }}
-              <span class="muted">· {{ m.category }}<span *ngIf="m.goal"> → {{ m.goal }}</span> · {{ m.source }}</span>
-            </span>
-            <a *ngIf="mailUrl(m) as url" [href]="url" target="_blank" rel="noopener"
-               class="muted" title="Abrir en Gmail el correo del que salió este movimiento"
-               style="white-space:nowrap">✉ Ver correo</a>
-            <strong [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'" style="white-space:nowrap">
+          <!-- Lectura: texto | monto | acciones, con columnas fijas para que
+               los montos queden en la misma vertical en todas las filas -->
+          <div *ngIf="editandoGasto !== m.id" class="mov-fila">
+            <div style="min-width:0">
+              <span class="mov-desc">{{ m.description }}</span>
+              <span class="mov-meta muted">
+                {{ m.category }}<span *ngIf="m.goal"> → {{ m.goal }}</span> · {{ m.source }}
+                <ng-container *ngIf="mailUrl(m) as url"> ·
+                  <a [href]="url" target="_blank" rel="noopener"
+                     title="Abrir en Gmail el correo del que salió este movimiento">✉ Ver correo</a>
+                </ng-container>
+              </span>
+            </div>
+            <strong class="mov-monto" [style.color]="m.type === 'income' ? 'var(--green)' : 'var(--red)'">
               {{ m.type === 'income' ? '+' : '-' }}{{ m.amount | currency:'CLP':'symbol-narrow':'1.0-0' }}
             </strong>
-            <button *ngIf="m.type === 'expense'" class="ghost" (click)="editarGasto(m)"
-                    title="Corregir glosa, monto o categoría"
-                    style="padding:2px 8px;line-height:1.4">✎</button>
-            <button *ngIf="m.type === 'expense'" class="ghost" (click)="removeExpense(m)"
-                    [disabled]="busyId === m.id" title="Quitar este gasto y devolver el monto al saldo"
-                    style="padding:2px 8px;line-height:1.4">✕</button>
+            <div class="mov-acciones">
+              <ng-container *ngIf="m.type === 'expense'">
+                <button class="ghost" (click)="editarGasto(m)" title="Corregir glosa, monto o categoría">✎</button>
+                <button class="ghost" (click)="removeExpense(m)" [disabled]="busyId === m.id"
+                        title="Quitar este gasto y devolver el monto al saldo">✕</button>
+              </ng-container>
+            </div>
           </div>
 
           <!-- Edición -->
           <div *ngIf="editandoGasto === m.id" style="display:grid;gap:8px;padding:8px 0">
             <input [(ngModel)]="borrador.description" placeholder="Descripción">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <input type="number" [(ngModel)]="borrador.amount" placeholder="Monto" style="flex:1;min-width:120px">
-              <select [(ngModel)]="borrador.category" style="flex:1;min-width:140px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <input type="number" [(ngModel)]="borrador.amount" placeholder="Monto">
+              <select [(ngModel)]="borrador.category">
                 <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
               </select>
             </div>
             <select *ngIf="borrador.category === 'ahorro' && metas.length" [(ngModel)]="borrador.goalId">
               <option *ngFor="let g of metas" [value]="g.id">Meta: {{ g.name }}</option>
             </select>
-            <div style="display:flex;gap:8px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
               <button (click)="guardarGasto(m)"
                       [disabled]="busyId === m.id || !borrador.description || !borrador.amount || (borrador.category === 'ahorro' && !borrador.goalId)">
                 Guardar
@@ -232,7 +235,7 @@ function mezclar(a: string, b: string, t: number): string {
           No hay más movimientos.
         </p>
 
-        <button class="ghost" style="margin-top:14px" (click)="connectBank()">
+        <button class="ghost" style="margin-top:14px;width:100%" (click)="connectBank()">
           Conectar Banco de Chile (y otros)
         </button>
         <p class="muted">Vía Fintoc: tus movimientos llegan solos y el saldo baja al instante.</p>
